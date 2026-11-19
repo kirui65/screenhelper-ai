@@ -130,6 +130,21 @@
       background: var(--bg); border-left: 4px solid var(--accent);
       white-space: pre-wrap; word-break: break-word; font-weight: 500;
     }
+    #output p { margin: 0 0 12px; }
+    #output p:last-child, #output ul:last-child, #output ol:last-child, #output pre:last-child, #output blockquote:last-child { margin-bottom: 0; }
+    #output h1, #output h2, #output h3, #output h4 { margin: 18px 0 8px; font-size: 1.12rem; line-height: 1.35; letter-spacing: -0.015em; }
+    #output h1:first-child, #output h2:first-child, #output h3:first-child, #output h4:first-child { margin-top: 0; }
+    #output ul, #output ol { margin: 0 0 12px; padding-left: 22px; }
+    #output li { padding-left: 3px; margin: 4px 0; }
+    #output pre { overflow: auto; margin: 8px 0 14px; padding: 14px; border-radius: 8px; background: #18212f; color: #f3f5f8; white-space: pre; }
+    #output pre code { padding: 0; background: transparent; color: inherit; }
+    #output code { padding: 2px 5px; border-radius: 4px; background: #e9eef5; color: #253247; font: 0.9em ui-monospace, SFMono-Regular, Consolas, monospace; }
+    #output blockquote { margin: 10px 0 14px; padding: 8px 12px; border-left: 3px solid #b6c7d8; color: var(--muted); }
+    #output a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+    #output .table-wrap { overflow-x: auto; margin: 10px 0 14px; }
+    #output table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    #output th, #output td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    #output th { background: #edf2f7; font-weight: 700; }
     #output.empty { color: var(--muted); font-weight: 400; }
     #output.error { border-left-color: var(--bad); color: var(--bad); }
 
@@ -142,8 +157,11 @@
     #history time { display: block; color: var(--muted); font-size: 0.72rem; margin-bottom: 2px; }
     .workspace { max-width: 1080px; margin: 0 auto; }
     .workspace .card { margin-bottom: 14px; }
-    .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr); gap: 14px; align-items: start; }
+    .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 12px; align-items: start; }
     .workspace-side .card { height: 100%; }
+    .privacy-note { margin-top: 10px; color: var(--muted); font-size: 0.75rem; }
+    .privacy-note summary { cursor: pointer; font-weight: 650; }
+    .privacy-note p { margin: 5px 0 0; }
     #accountCard { max-width: 1080px; margin: 0 auto 14px; padding: 13px 18px; }
     #accountCard .output-head { margin: 0; }
     #accountEmail { font-size: 0.95rem; }
@@ -178,8 +196,19 @@
       .hero-copy { margin-bottom: 20px; font-size: 1rem; }
       .trial-promo { padding: 16px; }
       .price-promo { padding: 15px 16px; }
-      .workspace-grid, .plan-grid { grid-template-columns: minmax(0, 1fr); }
-      .preview { max-height: 300px; }
+      .plan-grid { grid-template-columns: minmax(0, 1fr); }
+      .preview { max-height: 220px; }
+      .workspace .card { padding: 13px; margin-bottom: 8px; }
+      .workspace-side .card { height: auto; }
+      .workspace-grid { gap: 8px; }
+      textarea { min-height: 66px; margin-bottom: 8px; }
+      #output { padding: 13px; }
+      .workspace-side .hint { margin: 6px 0 0; font-size: 0.72rem; }
+      .privacy-note { margin-top: 8px; font-size: 0.72rem; }
+    }
+    @media (max-width: 600px) {
+      .workspace-grid { grid-template-columns: minmax(0, 1fr); }
+      .preview { max-height: 260px; }
     }
     @media (max-width: 480px) {
       main { padding: 18px 14px 32px; }
@@ -306,14 +335,17 @@
               <span id="askLabel">💡 Answer question</span>
             </button>
             <p class="hint">Shortcut: <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (<kbd>⌘</kbd> + <kbd>Enter</kbd> on Mac)</p>
-            <p class="hint">Screenshots and questions are sent to Coarena, which stores prompts and replies. Avoid sharing sensitive information.</p>
+            <details class="privacy-note">
+              <summary>About screenshot privacy</summary>
+              <p>Screenshots and questions are sent to Coarena, which stores prompts and replies. Avoid sharing sensitive information.</p>
+            </details>
           </section>
         </div>
       </div>
 
     <section class="card">
       <div class="output-head">
-        <h2>Response</h2>
+        <h2>Answer</h2>
         <button id="copyBtn" type="button" class="small hidden">Copy</button>
       </div>
       <div id="output" class="empty" aria-live="polite">Connect a tab to get started.</div>
@@ -387,8 +419,158 @@
       return trialEnds > Date.now() || Number(usage?.paid_answers || 0) > 0;
     }
 
+    function appendInline(parent, text) {
+      const syntax = /\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\*([^*\n]+)\*|_([^_\n]+)_|\[([^\]]+)\]\(([^)\s]+)\)/g;
+      let cursor = 0;
+      let match;
+      while ((match = syntax.exec(text))) {
+        if (match.index > cursor) parent.append(document.createTextNode(text.slice(cursor, match.index)));
+        const [, strongA, strongB, codeText, italicA, italicB, linkText, linkHref] = match;
+        if (strongA || strongB) {
+          const strong = document.createElement("strong");
+          strong.textContent = strongA || strongB;
+          parent.append(strong);
+        } else if (codeText) {
+          const code = document.createElement("code");
+          code.textContent = codeText;
+          parent.append(code);
+        } else if (italicA || italicB) {
+          const emphasis = document.createElement("em");
+          emphasis.textContent = italicA || italicB;
+          parent.append(emphasis);
+        } else if (linkText && linkHref) {
+          let safe = false;
+          try { safe = ["http:", "https:", "mailto:"].includes(new URL(linkHref, location.href).protocol); } catch { /* Show unsafe links as plain text. */ }
+          if (safe) {
+            const link = document.createElement("a");
+            link.href = linkHref;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = linkText;
+            parent.append(link);
+          } else parent.append(document.createTextNode(linkText));
+        }
+        cursor = syntax.lastIndex;
+      }
+      if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+    }
+
+    function renderMarkdown(root, source) {
+      root.replaceChildren();
+      const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+      let paragraph = [];
+      let list = null;
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        const block = document.createElement("p");
+        appendInline(block, paragraph.join(" "));
+        root.append(block);
+        paragraph = [];
+      };
+      const stopList = () => { list = null; };
+
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (/^\s*```/.test(line)) {
+          flushParagraph();
+          stopList();
+          const codeLines = [];
+          while (i + 1 < lines.length && !/^\s*```/.test(lines[i + 1])) codeLines.push(lines[++i]);
+          if (i + 1 < lines.length) i += 1;
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          code.textContent = codeLines.join("\n");
+          pre.append(code);
+          root.append(pre);
+          continue;
+        }
+        const heading = line.match(/^(#{1,4})\s+(.+)$/);
+        if (heading) {
+          flushParagraph();
+          stopList();
+          const block = document.createElement(`h${heading[1].length}`);
+          appendInline(block, heading[2]);
+          root.append(block);
+          continue;
+        }
+        const tableSeparator = lines[i + 1] && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1]);
+        if (line.includes("|") && tableSeparator) {
+          flushParagraph();
+          stopList();
+          const cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+          const wrap = document.createElement("div");
+          wrap.className = "table-wrap";
+          const table = document.createElement("table");
+          const head = document.createElement("thead");
+          const headerRow = document.createElement("tr");
+          for (const value of cells(line)) {
+            const cell = document.createElement("th");
+            appendInline(cell, value);
+            headerRow.append(cell);
+          }
+          head.append(headerRow);
+          table.append(head);
+          const body = document.createElement("tbody");
+          i += 2;
+          while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+            const row = document.createElement("tr");
+            for (const value of cells(lines[i])) {
+              const cell = document.createElement("td");
+              appendInline(cell, value);
+              row.append(cell);
+            }
+            body.append(row);
+            i += 1;
+          }
+          i -= 1;
+          table.append(body);
+          wrap.append(table);
+          root.append(wrap);
+          continue;
+        }
+        const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
+        const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+        if (bullet || numbered) {
+          flushParagraph();
+          const type = bullet ? "ul" : "ol";
+          if (!list || list.tagName.toLowerCase() !== type) {
+            stopList();
+            list = document.createElement(type);
+            root.append(list);
+          }
+          const item = document.createElement("li");
+          appendInline(item, (bullet || numbered)[1]);
+          list.append(item);
+          continue;
+        }
+        if (/^\s*>/.test(line)) {
+          flushParagraph();
+          stopList();
+          const quote = document.createElement("blockquote");
+          appendInline(quote, line.replace(/^\s*>\s?/, ""));
+          root.append(quote);
+          continue;
+        }
+        if (/^\s*([-*_])\1\1+\s*$/.test(line)) {
+          flushParagraph();
+          stopList();
+          root.append(document.createElement("hr"));
+          continue;
+        }
+        if (!line.trim()) {
+          flushParagraph();
+          stopList();
+          continue;
+        }
+        stopList();
+        paragraph.push(line.trim());
+      }
+      flushParagraph();
+    }
+
     function setOutput(text, kind) {
-      output.textContent = text;
+      if (kind) output.textContent = text;
+      else renderMarkdown(output, text);
       output.className = kind || "";
       copyBtn.classList.toggle("hidden", kind !== "");
     }

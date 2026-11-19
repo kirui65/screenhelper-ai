@@ -208,8 +208,8 @@ async function askCoarena(image, prompt) {
 
   const guidance = typeof prompt === "string" ? prompt.trim().slice(0, 4000) : "";
   const userText = guidance
-    ? `Look carefully at the screenshot. Answer the user's request using only information visible in the image. If text or details are unclear, say so instead of guessing.\n\nUser request: ${guidance}`
-    : "Read the screenshot carefully and explain or answer the most relevant question visible. Use only information visible in the image; if text or details are unclear, say so instead of guessing.";
+    ? `Read the screenshot and answer this request directly. Use visible details as context; if important text is unclear, say what you cannot read rather than guessing.\n\nUser request: ${guidance}`
+    : "Read the screenshot and answer the clearest visible question or task. If none is visible, give a one-sentence summary of the screen and say that no explicit question is shown. Do not guess at unreadable text.";
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -222,9 +222,12 @@ async function askCoarena(image, prompt) {
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0.2,
+        temperature: 0.15,
         max_tokens: 1200,
         messages: [{
+          role: "system",
+          content: "You are ScreenHelper, a careful screen-reading assistant. Start with the direct answer. Use general knowledge to explain visible content when useful, but separate facts from inference and never claim details you cannot see. Keep routine answers concise; use numbered steps for procedures and bullets for a few related points. Format with clean Markdown: short headings only for multi-part answers, bold sparingly, inline code for short commands, and fenced blocks for code. Do not output raw Markdown markers as decoration, avoid tables unless they clearly help, and do not add a long preamble or repeat the user's question.",
+        }, {
           role: "user",
           content: [
             { type: "text", text: userText },
