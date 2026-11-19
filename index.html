@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ScreenHelper AI</title>
-  <script>if (window.location.pathname === "/plans") document.documentElement.classList.add("plans-route");</script>
+  <script>
+    document.documentElement.classList.add("session-checking");
+    document.documentElement.classList.add(window.location.pathname === "/plans" ? "plans-route" : "workspace-route");
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -24,8 +27,9 @@
       --shadow: 0 14px 36px rgba(20, 35, 50, 0.08);
     }
     * { box-sizing: border-box; }
-    .plans-route #authLayout { display: none !important; }
+    .session-checking #authLayout { display: none !important; }
     .plans-route #plansLoading { display: block !important; }
+    .workspace-route #workspaceLoading { display: block !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -283,6 +287,7 @@
       <h1>ScreenHelper <span>AI</span></h1>
       <div id="status" class="status" role="status">No tab connected</div>
     </header>
+    <div id="workspaceLoading" class="card hidden" role="status">Loading your workspace…</div>
 
     <div id="authLayout" class="auth-layout">
       <section id="marketingPanel" class="marketing-panel" aria-labelledby="heroTitle">
@@ -715,7 +720,8 @@
 
     function showAccount(data) {
       authenticated = true;
-      document.documentElement.classList.remove("plans-route");
+      document.documentElement.classList.remove("session-checking", "plans-route", "workspace-route");
+      $("workspaceLoading").classList.add("hidden");
       $("plansLoading").classList.add("hidden");
       authLayout.classList.add("hidden");
       authCard.classList.add("hidden");
@@ -734,12 +740,14 @@
         const data = await res.json();
         if (res.ok && data.authenticated) showAccount(data);
         else {
-          document.documentElement.classList.remove("plans-route");
+          document.documentElement.classList.remove("session-checking", "plans-route", "workspace-route");
+          $("workspaceLoading").classList.add("hidden");
           $("plansLoading").classList.add("hidden");
           if (data.error) $("authMessage").textContent = data.error;
         }
       } catch {
-        document.documentElement.classList.remove("plans-route");
+        document.documentElement.classList.remove("session-checking", "plans-route", "workspace-route");
+        $("workspaceLoading").classList.add("hidden");
         $("plansLoading").classList.add("hidden");
         $("authMessage").textContent = "Could not connect to the server.";
       }
