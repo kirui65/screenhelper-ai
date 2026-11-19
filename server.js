@@ -459,8 +459,44 @@ async function handlePaymentStatus(req, res, paymentId) {
   const user = await requireUser(req, res);
   if (!user) return;
   try {
-    const payment = await supabaseRpc("screenhelper_payment_status", { p_payment_id: paymentId, p_user_id: user.id });
+    let payment = await supabaseRpc("screenhelper_payment_status", { p_payment_id: paymentId, p_user_id: user.id });
     if (!payment) return sendJson(res, 404, { error: "Payment not found." });
+
+    // Callbacks normally settle purchases immediately. Recheck Lipwa while the
+    // user is waiting too, so a delayed or missed callback cannot strand credit.
+    if (payment.status === "pending" && process.env.LIPWA_API_KEY) {
+      const rows = await supabaseAdmin(
+        `screenhelper_payments?select=id,status,checkout_id,amount_kes,answers&id=eq.${encodeURIComponent(paymentId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`,
+      );
+      const record = rows?.[0];
+      if (record?.status === "pending" && record.checkout_id) {
+        try {
+          const verifiedResponse = await fetch(`${LIPWA_BASE_URL}/status?ref=${encodeURIComponent(record.checkout_id)}`, {
+            headers: { Authorization: `Bearer ${process.env.LIPWA_API_KEY}` },
+          });
+          const verified = await verifiedResponse.json().catch(() => ({}));
+          const validIdentity = verifiedResponse.ok
+            && verified.pay_reference === record.checkout_id
+            && verified.api_ref === `screenhelper:${record.id}`;
+          if (validIdentity && verified.status === "payment.success" && Number(verified.amount) === record.amount_kes) {
+            await supabaseRpc("screenhelper_settle_payment", {
+              p_payment_id: record.id,
+              p_checkout_id: record.checkout_id,
+              p_amount: record.amount_kes,
+              p_receipt: String(verified.receipt || ""),
+            });
+          } else if (validIdentity && verified.status === "payment.failed") {
+            await supabaseRpc("screenhelper_fail_payment", {
+              p_payment_id: record.id,
+              p_checkout_id: record.checkout_id,
+            });
+          }
+        } catch {
+          // Keep the purchase pending on temporary Lipwa/network errors; the next poll retries.
+        }
+        payment = await supabaseRpc("screenhelper_payment_status", { p_payment_id: paymentId, p_user_id: user.id });
+      }
+    }
     const usage = await supabaseRpc("screenhelper_account_status", { p_user_id: user.id });
     return sendJson(res, 200, { ...payment, usage });
   } catch (error) {
