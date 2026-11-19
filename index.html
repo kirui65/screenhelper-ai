@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScreenHelper AI</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --ink: #3a3a3a;
+      --muted: #646970;
+      --line: #e5e7eb;
+      --accent: #0274be;
+      --accent-ink: #ffffff;
+      --accent-hover: #025f9e;
+      --ok: #18794e;
+      --ok-bg: #e7f5ee;
+      --bad: #b42318;
+      --bad-bg: #fff0ef;
+      --radius: 6px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #171b20;
+        --card: #20262d;
+        --ink: #e7e9ec;
+        --muted: #a3aab3;
+        --line: #39414a;
+        --accent: #55a7df;
+        --accent-ink: #101820;
+        --accent-hover: #78b9e7;
+        --ok-bg: #153326;
+        --ok: #73d6a3;
+        --bad-bg: #3c2423;
+        --bad: #ffaaa3;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 24px 56px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+    h1 { font-size: 1.7rem; font-weight: 650; margin: 0; letter-spacing: -0.025em; }
+    h1 span { color: var(--accent); }
+    h2 { font-size: 1.05rem; font-weight: 650; color: var(--ink); margin: 0 0 12px; }
+
+    .status {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 11px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;
+      background: var(--bad-bg); color: var(--bad);
+    }
+    .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .status.active { background: var(--ok-bg); color: var(--ok); }
+    .status.active::before { animation: pulse 1.6s infinite; }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 18px; box-shadow: 0 2px 8px rgba(20, 35, 50, 0.035); }
+
+    .preview {
+      position: relative; aspect-ratio: 16 / 9; border-radius: 5px; overflow: hidden;
+      background: repeating-linear-gradient(45deg, transparent 0 10px, rgba(2,116,190,0.035) 10px 20px), var(--bg);
+      border: 1px dashed var(--line); display: grid; place-items: center; margin-bottom: 14px;
+    }
+    .preview video { width: 100%; height: 100%; object-fit: contain; display: none; background: #000; }
+    .preview.live { border-style: solid; }
+    .preview.live video { display: block; }
+    .preview.live .placeholder { display: none; }
+    .placeholder { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 0 16px; }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      font: inherit; font-weight: 600; font-size: 0.92rem;
+      padding: 10px 16px; border-radius: 4px; cursor: pointer;
+      border: 1px solid var(--line); background: var(--card); color: var(--ink);
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #googleBtn { width: 100%; margin: 4px 0 12px; }
+    .primary { flex: 1; min-width: 180px; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
+    .small { padding: 6px 10px; font-size: 0.8rem; }
+
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+    textarea {
+      width: 100%; min-height: 84px; resize: vertical; padding: 10px 12px;
+      border-radius: 4px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+      font: inherit; font-size: 0.95rem; margin-bottom: 12px;
+    }
+    input {
+      width: 100%; padding: 10px 12px; border-radius: 4px; border: 1px solid var(--line);
+      background: var(--card); color: var(--ink); font: inherit; margin-bottom: 12px;
+    }
+    .hint { color: var(--muted); font-size: 0.78rem; margin-top: 8px; }
+    kbd { font-family: ui-monospace, monospace; font-size: 0.75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+
+    .output-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .output-head h2 { margin: 0; }
+    #output {
+      min-height: 56px; padding: 14px 16px; border-radius: 4px;
+      background: var(--bg); border-left: 4px solid var(--accent);
+      white-space: pre-wrap; word-break: break-word; font-weight: 500;
+    }
+    #output.empty { color: var(--muted); font-weight: 400; }
+    #output.error { border-left-color: var(--bad); color: var(--bad); }
+
+    .spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+    .loading .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #history { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+    #history li { font-size: 0.88rem; padding: 10px 12px; border-radius: 8px; background: var(--bg); }
+    #history time { display: block; color: var(--muted); font-size: 0.72rem; margin-bottom: 2px; }
+    @media (max-width: 560px) {
+      main { padding: 24px 14px 36px; }
+      .card { padding: 18px; }
+      h1 { font-size: 1.45rem; }
+      .status { font-size: 0.75rem; }
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>ScreenHelper <span>AI</span></h1>
+      <div id="status" class="status" role="status">No tab connected</div>
+    </header>
+
+    <section id="authCard" class="card">
+      <h2 id="authTitle">Create your account or sign in</h2>
+      <button id="googleBtn" type="button">Continue with Google</button>
+      <p class="hint">Or use email and password</p>
+      <label for="emailInput">Email</label>
+      <input id="emailInput" type="email" autocomplete="email" placeholder="you@example.com" required>
+      <label for="passwordInput">Password</label>
+      <input id="passwordInput" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
+      <button id="togglePasswordBtn" type="button" class="small">Show password</button>
+      <div class="row">
+        <button id="loginBtn" type="button" class="primary">Sign in</button>
+        <button id="signupBtn" type="button">Create account</button>
+      </div>
+      <button id="forgotBtn" type="button" class="small">Forgot password?</button>
+      <p id="authMessage" class="hint" role="status">New accounts get a 2-hour free trial.</p>
+    </section>
+
+    <section id="resetCard" class="card hidden">
+      <h2>Reset your password</h2>
+      <label for="recoveryEmailInput">Email</label>
+      <input id="recoveryEmailInput" type="email" autocomplete="email" placeholder="you@example.com">
+      <label for="recoveryCodeInput">Email code</label>
+      <input id="recoveryCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Enter the code from your email">
+      <button id="resendCodeBtn" type="button" class="small">Resend code</button>
+      <label for="newPasswordInput">New password</label>
+      <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
+      <label for="confirmPasswordInput">Confirm new password</label>
+      <input id="confirmPasswordInput" type="password" autocomplete="new-password" minlength="8" placeholder="Enter it again">
+      <button id="toggleResetPasswordsBtn" type="button" class="small">Show passwords</button>
+      <div class="row">
+        <button id="savePasswordBtn" type="button" class="primary">Update password</button>
+        <button id="cancelResetBtn" type="button">Back to sign in</button>
+      </div>
+      <p id="resetMessage" class="hint" role="status">Enter the code sent to your email.</p>
+    </section>
+
+    <section id="accountCard" class="card hidden">
+      <div class="output-head">
+        <div><strong id="accountEmail"></strong><p id="usageText" class="hint"></p></div>
+        <button id="logoutBtn" type="button" class="small">Sign out</button>
+      </div>
+    </section>
+
+    <div id="appArea" class="hidden">
+
+    <section class="card">
+      <div id="preview" class="preview">
+        <div class="placeholder">Share a browser tab to see a live preview here.</div>
+        <video id="videoFeed" autoplay playsinline muted></video>
+      </div>
+      <div class="row">
+        <button id="connectBtn" type="button">🔗 Connect tab</button>
+        <button id="disconnectBtn" type="button" class="hidden">⏹ Stop sharing</button>
+      </div>
+      <p id="support" class="hint hidden"></p>
+    </section>
+
+    <section class="card">
+      <label for="questionInput">Guidance <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+      <textarea id="questionInput" placeholder="e.g. “Explain question 3” — leave blank to answer whatever is on screen."></textarea>
+      <button id="askBtn" type="button" class="primary" disabled>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="askLabel">💡 Answer question</span>
+      </button>
+      <p class="hint">Shortcut: <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (<kbd>⌘</kbd> + <kbd>Enter</kbd> on Mac)</p>
+      <p class="hint">Screenshots and questions are sent to Coarena, which stores prompts and replies. Avoid sharing sensitive information.</p>
+    </section>
+
+    <section class="card">
+      <h2>Answer packages</h2>
+      <p>50 answers for KSh 25. Buy another bundle whenever you need more.</p>
+      <label for="phoneInput">M-Pesa phone number</label>
+      <input id="phoneInput" type="tel" autocomplete="tel" placeholder="0712345678">
+      <button id="buyBtn" type="button">Buy 50 answers · KSh 25</button>
+      <p id="paymentMessage" class="hint" role="status"></p>
+    </section>
+
+    <section class="card">
+      <div class="output-head">
+        <h2>Response</h2>
+        <button id="copyBtn" type="button" class="small hidden">Copy</button>
+      </div>
+      <div id="output" class="empty" aria-live="polite">Connect a tab to get started.</div>
+    </section>
+
+    <section id="historyCard" class="card hidden">
+      <div class="output-head">
+        <h2>Earlier answers</h2>
+        <button id="clearBtn" type="button" class="small">Clear</button>
+      </div>
+      <ul id="history"></ul>
+    </section>
+    </div>
+  </main>
+
+  <script>
+    const MAX_WIDTH = 1600; // downscale captures to keep requests small
+
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status"), previewEl = $("preview"), video = $("videoFeed");
+    const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn");
+    const askBtn = $("askBtn"), askLabel = $("askLabel"), input = $("questionInput");
+    const output = $("output"), copyBtn = $("copyBtn");
+    const historyCard = $("historyCard"), historyList = $("history");
+    const authCard = $("authCard"), resetCard = $("resetCard"), accountCard = $("accountCard"), appArea = $("appArea");
+
+    let stream = null;
+    let busy = false;
+    let lastAnswer = null;
+    let authenticated = false;
+    let usage = null;
+
+    function accessAvailable() {
+      const trialEnds = usage?.trial_ends_at ? Date.parse(usage.trial_ends_at) : 0;
+      return trialEnds > Date.now() || Number(usage?.paid_answers || 0) > 0;
+    }
+
+    function setOutput(text, kind) {
+      output.textContent = text;
+      output.className = kind || "";
+      copyBtn.classList.toggle("hidden", kind !== "");
+    }
+
+    function updateControls() {
+      const live = !!stream;
+      statusEl.textContent = live ? "Tab connected" : "No tab connected";
+      statusEl.classList.toggle("active", live);
+      previewEl.classList.toggle("live", live);
+      connectBtn.textContent = live ? "🔄 Switch tab" : "🔗 Connect tab";
+      disconnectBtn.classList.toggle("hidden", !live);
+      askBtn.disabled = !live || busy || !authenticated || !accessAvailable();
+      askBtn.classList.toggle("loading", busy);
+      askLabel.textContent = busy ? "Thinking…" : "💡 Answer question";
+    }
+
+    function updateUsage(nextUsage) {
+      if (!nextUsage) return;
+      usage = nextUsage;
+      const remaining = Math.max(0, Math.ceil((Date.parse(usage.trial_ends_at) - Date.now()) / 1000));
+      const timer = `${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m ${remaining % 60}s`;
+      if (remaining > 0) {
+        $("usageText").textContent = `Free trial: ${timer} remaining · ${usage.paid_answers || 0} paid answers`;
+      } else if (usage.paid_answers > 0) {
+        $("usageText").textContent = `${usage.paid_answers} paid answers remaining`;
+      } else {
+        $("usageText").textContent = "Free trial ended · buy a 50-answer package for KSh 25 to continue.";
+      }
+      updateControls();
+    }
+
+    setInterval(() => { if (authenticated && usage) updateUsage(usage); }, 1000);
+
+    function showAccount(data) {
+      authenticated = true;
+      authCard.classList.add("hidden");
+      resetCard.classList.add("hidden");
+      accountCard.classList.remove("hidden");
+      appArea.classList.remove("hidden");
+      $("accountEmail").textContent = data.email || "Signed in";
+      updateUsage(data.usage);
+    }
+
+    async function checkAccount() {
+      try {
+        const res = await fetch("/api/me", { credentials: "same-origin" });
+        const data = await res.json();
+        if (res.ok && data.authenticated) showAccount(data);
+        else if (data.error) $("authMessage").textContent = data.error;
+      } catch {
+        $("authMessage").textContent = "Could not connect to the server.";
+      }
+    }
+
+    async function authenticate(action) {
+      const button = action === "login" ? $("loginBtn") : $("signupBtn");
+      button.disabled = true;
+      $("authMessage").textContent = action === "login" ? "Signing in…" : "Creating account…";
+      try {
+        const res = await fetch(`/api/auth/${action}`, {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: $("emailInput").value, password: $("passwordInput").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Authentication failed.");
+        if (data.confirmation_required) {
+          $("authMessage").textContent = `Check ${data.email || "your email"} for the confirmation link, then sign in.`;
+        } else {
+          await checkAccount();
+          $("authMessage").textContent = "Signed in successfully.";
+        }
+      } catch (error) {
+        $("authMessage").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function requestPasswordReset() {
+      const button = $("forgotBtn");
+      button.disabled = true;
+      $("authMessage").textContent = "Requesting a reset code…";
+      try {
+        const res = await fetch("/api/auth/recover", {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: $("emailInput").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not request a reset code.");
+        $("recoveryEmailInput").value = $("emailInput").value.trim();
+        $("authMessage").textContent = "";
+        authCard.classList.add("hidden");
+        resetCard.classList.remove("hidden");
+        $("resetMessage").textContent = `${data.message} Enter the code and choose a new password.`;
+        $("recoveryCodeInput").focus();
+      } catch (error) {
+        $("authMessage").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function saveNewPassword() {
+      const password = $("newPasswordInput").value;
+      if (password.length < 8) {
+        $("resetMessage").textContent = "Choose a password with at least 8 characters.";
+        return;
+      }
+      if (password !== $("confirmPasswordInput").value) {
+        $("resetMessage").textContent = "Those passwords do not match.";
+        return;
+      }
+      const button = $("savePasswordBtn");
+      button.disabled = true;
+      $("resetMessage").textContent = "Updating your password…";
+      try {
+        const res = await fetch("/api/auth/recover/verify", {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: $("recoveryEmailInput").value, token: $("recoveryCodeInput").value, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not update the password.");
+        resetCard.classList.add("hidden");
+        authCard.classList.remove("hidden");
+        $("passwordInput").value = "";
+        $("recoveryCodeInput").value = "";
+        $("newPasswordInput").value = "";
+        $("confirmPasswordInput").value = "";
+        $("authMessage").textContent = data.message || "Password updated. Sign in with your new password.";
+      } catch (error) {
+        $("resetMessage").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function resendResetCode() {
+      const button = $("resendCodeBtn");
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/auth/recover", {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: $("recoveryEmailInput").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not resend the code.");
+        $("resetMessage").textContent = "If an account exists for that email, a new reset code has been sent.";
+      } catch (error) {
+        $("resetMessage").textContent = error.message;
+      } finally {
+        window.setTimeout(() => { button.disabled = false; }, 60_000);
+      }
+    }
+
+    $("googleBtn").addEventListener("click", () => {
+      window.location.assign("/api/auth/google");
+    });
+    $("togglePasswordBtn").addEventListener("click", (event) => {
+      const password = $("passwordInput");
+      password.type = password.type === "password" ? "text" : "password";
+      event.currentTarget.textContent = password.type === "password" ? "Show password" : "Hide password";
+    });
+    $("toggleResetPasswordsBtn").addEventListener("click", (event) => {
+      const show = $("newPasswordInput").type === "password";
+      $("newPasswordInput").type = show ? "text" : "password";
+      $("confirmPasswordInput").type = show ? "text" : "password";
+      event.currentTarget.textContent = show ? "Hide passwords" : "Show passwords";
+    });
+
+    async function buyAnswers() {
+      const button = $("buyBtn");
+      button.disabled = true;
+      $("paymentMessage").textContent = "Starting M-Pesa payment…";
+      try {
+        const res = await fetch("/api/payments/checkout", {
+          method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: $("phoneInput").value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not start payment.");
+        $("paymentMessage").textContent = `${data.message} Waiting for payment confirmation…`;
+        for (let attempt = 0; attempt < 36; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          const check = await fetch(`/api/payments/${encodeURIComponent(data.payment_id)}`, { credentials: "same-origin" });
+          const status = await check.json();
+          if (!check.ok) throw new Error(status.error || "Could not check payment.");
+          updateUsage(status.usage);
+          if (status.status === "paid") {
+            $("paymentMessage").textContent = "Payment received. 50 answers have been added to your account.";
+            return;
+          }
+          if (status.status === "failed") throw new Error("Payment failed or was cancelled. You can try again.");
+        }
+        $("paymentMessage").textContent = "Payment is still pending. Your balance will update when Lipwa confirms it.";
+      } catch (error) {
+        $("paymentMessage").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function stopStream() {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+      video.srcObject = null;
+      updateControls();
+    }
+
+    async function connectTab() {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        setOutput("Screen sharing isn't supported in this browser. Try a recent desktop Chrome, Edge or Firefox.", "error");
+        return;
+      }
+      try {
+        const next = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: "browser" },
+          audio: false,
+        });
+        stopStream();
+        stream = next;
+        video.srcObject = stream;
+        stream.getVideoTracks()[0].addEventListener("ended", () => {
+          stopStream();
+          setOutput("Sharing stopped. Connect a tab to continue.", "empty");
+        });
+        updateControls();
+        setOutput("Connected! Open the shared tab, then come back and press “Answer question”.", "empty");
+      } catch (err) {
+        if (err.name === "NotAllowedError") {
+          setOutput("Sharing was cancelled.", "empty");
+        } else {
+          setOutput("Couldn't connect: " + err.message, "error");
+        }
+        updateControls();
+      }
+    }
+
+    function captureFrame() {
+      const w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) throw new Error("The shared tab isn't sending video yet — try again in a moment.");
+      const scale = Math.min(1, MAX_WIDTH / w);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.7);
+    }
+
+    async function askQuestion() {
+      if (!stream || busy) return;
+      busy = true;
+      updateControls();
+      setOutput("Reading the shared tab…", "empty");
+      try {
+        const image = captureFrame();
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image, prompt: input.value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.usage) updateUsage(data.usage);
+        if (!res.ok || data.error) throw new Error(data.error || `Request failed (${res.status})`);
+        if (lastAnswer) addHistory(lastAnswer);
+        lastAnswer = { text: data.answer, at: new Date() };
+        setOutput(data.answer, "");
+      } catch (err) {
+        setOutput(err.message, "error");
+      } finally {
+        busy = false;
+        updateControls();
+      }
+    }
+
+    function addHistory(entry) {
+      const li = document.createElement("li");
+      const time = document.createElement("time");
+      time.textContent = entry.at.toLocaleTimeString();
+      li.append(time, document.createTextNode(entry.text));
+      historyList.prepend(li);
+      while (historyList.children.length > 10) historyList.lastChild.remove();
+      historyCard.classList.remove("hidden");
+    }
+
+    connectBtn.addEventListener("click", connectTab);
+    disconnectBtn.addEventListener("click", () => {
+      stopStream();
+      setOutput("Sharing stopped. Connect a tab to continue.", "empty");
+    });
+    askBtn.addEventListener("click", askQuestion);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); askQuestion(); }
+    });
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(output.textContent);
+        copyBtn.textContent = "Copied";
+        setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+      } catch { /* clipboard blocked */ }
+    });
+    $("clearBtn").addEventListener("click", () => {
+      historyList.replaceChildren();
+      historyCard.classList.add("hidden");
+    });
+
+    $("loginBtn").addEventListener("click", () => authenticate("login"));
+    $("signupBtn").addEventListener("click", () => authenticate("signup"));
+    $("forgotBtn").addEventListener("click", requestPasswordReset);
+    $("resendCodeBtn").addEventListener("click", resendResetCode);
+    $("savePasswordBtn").addEventListener("click", saveNewPassword);
+    $("cancelResetBtn").addEventListener("click", async () => {
+      resetCard.classList.add("hidden");
+      authCard.classList.remove("hidden");
+      $("recoveryCodeInput").value = "";
+      $("newPasswordInput").value = "";
+      $("confirmPasswordInput").value = "";
+      $("authMessage").textContent = "Password reset cancelled.";
+    });
+    $("passwordInput").addEventListener("keydown", (event) => { if (event.key === "Enter") authenticate("login"); });
+    $("confirmPasswordInput").addEventListener("keydown", (event) => { if (event.key === "Enter") saveNewPassword(); });
+    $("logoutBtn").addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      stopStream();
+      authenticated = false;
+      usage = null;
+      accountCard.classList.add("hidden");
+      appArea.classList.add("hidden");
+      authCard.classList.remove("hidden");
+      $("passwordInput").value = "";
+      $("authMessage").textContent = "You have signed out.";
+    });
+    $("buyBtn").addEventListener("click", buyAnswers);
+
+    updateControls();
+    const pageParams = new URLSearchParams(window.location.search);
+    if (pageParams.has("auth_error")) {
+      $("authMessage").textContent = "Google sign-in didn’t finish. Please try again.";
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    checkAccount();
+  </script>
+</body>
+</html>
