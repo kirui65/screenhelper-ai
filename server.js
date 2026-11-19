@@ -27,8 +27,13 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPAB
 const UNLIMITED_ACCESS_EMAILS = new Set((process.env.UNLIMITED_ACCESS_EMAILS || "")
   .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
 const LIPWA_BASE_URL = (process.env.LIPWA_BASE_URL || "https://pay.lipwa.app/api").replace(/\/+$/, "");
-const BUNDLE_PRICE_KES = 25;
-const BUNDLE_ANSWERS = 50;
+const ANSWER_PLANS = Object.freeze({
+  pack_50: Object.freeze({ answers: 50, amountKes: 25 }),
+  pack_100: Object.freeze({ answers: 100, amountKes: 50 }),
+  pack_250: Object.freeze({ answers: 250, amountKes: 125 }),
+  pack_500: Object.freeze({ answers: 500, amountKes: 250 }),
+  pack_1000: Object.freeze({ answers: 1000, amountKes: 500 }),
+});
 const MAX_BODY_BYTES = 9 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_IN_FLIGHT = 2;
@@ -416,19 +421,21 @@ async function handleCheckout(req, res) {
   }
   let body;
   try { body = await readJson(req); } catch (error) { return sendJson(res, error.status || 400, { error: error.message }); }
+  const plan = typeof body.plan_id === "string" ? ANSWER_PLANS[body.plan_id] : null;
+  if (!plan) return sendJson(res, 400, { error: "Choose one of the available answer bundles." });
   const phone = typeof body.phone === "string" ? body.phone.replace(/[\s()-]/g, "") : "";
   if (!/^(?:\+?254|0)(?:7|1)\d{8}$/.test(phone)) return sendJson(res, 400, { error: "Enter a valid Kenyan M-Pesa number, for example 0712345678." });
 
   const paymentId = require("node:crypto").randomUUID();
   try {
     await supabaseAdmin("screenhelper_payments", { method: "POST", prefer: "return=minimal", body: {
-      id: paymentId, user_id: user.id, amount_kes: BUNDLE_PRICE_KES, answers: BUNDLE_ANSWERS,
+      id: paymentId, user_id: user.id, amount_kes: plan.amountKes, answers: plan.answers,
     } });
     const response = await fetch(`${LIPWA_BASE_URL}/payments`, {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.LIPWA_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount: BUNDLE_PRICE_KES,
+        amount: plan.amountKes,
         phone_number: phone,
         channel_id: process.env.LIPWA_CHANNEL_ID,
         callback_url: `${process.env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/api/lipwa/webhook`,
@@ -438,7 +445,10 @@ async function handleCheckout(req, res) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.CheckoutRequestID) throw new Error(data.message || data.ResponseDescription || "Lipwa could not start the payment.");
     await supabaseAdmin(`screenhelper_payments?id=eq.${paymentId}`, { method: "PATCH", prefer: "return=minimal", body: { checkout_id: data.CheckoutRequestID } });
-    return sendJson(res, 200, { payment_id: paymentId, message: data.CustomerMessage || "Check your phone and enter your M-Pesa PIN to complete payment." });
+    return sendJson(res, 200, {
+      payment_id: paymentId, answers: plan.answers, amount_kes: plan.amountKes,
+      message: data.CustomerMessage || `Check your phone and enter your M-Pesa PIN to pay KSh ${plan.amountKes}.`,
+    });
   } catch (error) {
     try { await supabaseAdmin(`screenhelper_payments?id=eq.${paymentId}`, { method: "PATCH", prefer: "return=minimal", body: { status: "failed" } }); } catch { /* Best effort cleanup. */ }
     return sendJson(res, 502, { error: `Could not start M-Pesa payment: ${error.message}` });

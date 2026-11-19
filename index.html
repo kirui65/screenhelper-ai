@@ -126,9 +126,9 @@
     .output-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
     .output-head h2 { margin: 0; }
     #output {
-      min-height: 56px; padding: 16px; border-radius: 8px;
+      min-height: clamp(220px, 35vh, 420px); width: 100%; padding: 18px; border-radius: 8px;
       background: var(--bg); border-left: 4px solid var(--accent);
-      white-space: pre-wrap; word-break: break-word; font-weight: 500;
+      white-space: normal; overflow-wrap: anywhere; word-break: normal; font-weight: 500; line-height: 1.7;
     }
     #output p { margin: 0 0 12px; }
     #output p:last-child, #output ul:last-child, #output ol:last-child, #output pre:last-child, #output blockquote:last-child { margin-bottom: 0; }
@@ -155,14 +155,14 @@
     #history { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
     #history li { font-size: 0.88rem; padding: 12px 14px; border-radius: 8px; background: var(--bg); }
     #history time { display: block; color: var(--muted); font-size: 0.72rem; margin-bottom: 2px; }
-    .workspace { max-width: 1080px; margin: 0 auto; }
+    .workspace { max-width: 1120px; margin: 0 auto; }
     .workspace .card { margin-bottom: 14px; }
     .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 12px; align-items: start; }
     .workspace-side .card { height: 100%; }
     .privacy-note { margin-top: 10px; color: var(--muted); font-size: 0.75rem; }
     .privacy-note summary { cursor: pointer; font-weight: 650; }
     .privacy-note p { margin: 5px 0 0; }
-    #accountCard { max-width: 1080px; margin: 0 auto 14px; padding: 13px 18px; }
+    #accountCard { max-width: 1120px; margin: 0 auto 14px; padding: 13px 18px; }
     #accountCard .output-head { margin: 0; }
     #accountEmail { font-size: 0.95rem; }
     #usageText { margin: 2px 0 0; }
@@ -175,16 +175,28 @@
     .plans-top p { margin: 3px 0 0; color: var(--muted); font-size: 0.9rem; }
     .back-link { color: var(--accent); font-size: 0.88rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
     .back-link:hover { text-decoration: underline; }
-    .plan-grid { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 14px; align-items: stretch; }
+    .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: stretch; }
     .plan-card { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
     .plan-card h3 { margin: 0 0 8px; font-size: 1.12rem; }
     .plan-card p { color: var(--muted); margin: 8px 0; }
     .plan-label { color: var(--accent); font-size: 0.74rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
     .plan-price { margin: 10px 0; color: var(--ink); font-size: 1.9rem; font-weight: 750; letter-spacing: -0.04em; }
     .plan-price span { color: var(--muted); font-size: 0.86rem; font-weight: 500; letter-spacing: 0; }
-    .plan-current { padding: 12px; border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 0.85rem; }
+    .plan-current { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 20px; border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 0.85rem; }
+    .plan-current p { margin: 0; color: var(--ink); }
+    .plan-purchase-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 4px; }
+    .plan-purchase-head h3 { margin: 0; font-size: 1.1rem; }
+    .plan-purchase-head p { margin: 3px 0 0; color: var(--muted); font-size: 0.84rem; }
+    .plans-phone { flex: 0 1 390px; margin: 0; }
     .plan-featured { border-color: rgba(2,116,190,0.35); }
-    .plan-featured #buyBtn { width: 100%; margin-top: 2px; }
+    .plan-option { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 16px; text-align: left; }
+    .plan-option .plan-label { min-height: 1.2em; }
+    .plan-option h3 { margin: 0; }
+    .plan-option .plan-price { margin: 2px 0; font-size: 1.65rem; }
+    .plan-option .plan-price span { display: block; font-size: 0.76rem; }
+    .plan-option p { margin: 0; font-size: 0.8rem; }
+    .plan-option button { width: 100%; margin-top: auto; }
+    .plans-phone { max-width: 440px; margin: 0 0 16px; }
     kbd { font-family: ui-monospace, monospace; font-size: 0.75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--card); }
     @media (max-width: 760px) {
       main { padding: 22px 18px 40px; }
@@ -196,13 +208,15 @@
       .hero-copy { margin-bottom: 20px; font-size: 1rem; }
       .trial-promo { padding: 16px; }
       .price-promo { padding: 15px 16px; }
-      .plan-grid { grid-template-columns: minmax(0, 1fr); }
       .preview { max-height: 220px; }
       .workspace .card { padding: 13px; margin-bottom: 8px; }
       .workspace-side .card { height: auto; }
       .workspace-grid { gap: 8px; }
       textarea { min-height: 66px; margin-bottom: 8px; }
       #output { padding: 13px; }
+      .plan-purchase-head { align-items: stretch; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+      .plans-phone { width: 100%; max-width: none; margin: 0; }
+      .plan-current { align-items: flex-start; flex-direction: column; gap: 4px; margin-bottom: 16px; }
       .workspace-side .hint { margin: 6px 0 0; font-size: 0.72rem; }
       .privacy-note { margin-top: 8px; font-size: 0.72rem; }
     }
@@ -374,24 +388,48 @@
         <h3>Unlimited access</h3>
         <p>This account already has unlimited answer access.</p>
       </div>
-      <div id="planChoices" class="plan-grid">
-        <article class="plan-card">
-          <span class="plan-label">Your current access</span>
-          <h3>Free trial</h3>
-          <div id="planCurrentStatus" class="plan-current">2 hours of access for every new account.</div>
-          <p>No payment details needed to start. Trial time begins when you create your account.</p>
-        </article>
-        <article class="plan-card plan-featured">
-          <span class="plan-label">One-time purchase</span>
-          <h3>Answer bundle</h3>
-          <div class="plan-price">KSh 25 <span>for 50 answers</span></div>
-          <p>Pay once with M-Pesa. Your unused answers stay on your account.</p>
+      <div class="plan-current">
+        <strong>Your current access</strong>
+        <p id="planCurrentStatus">2 hours of access for every new account.</p>
+      </div>
+      <div class="plan-purchase-head">
+        <div>
+          <h3>Choose an answer bundle</h3>
+          <p>One-time M-Pesa payment · KSh 25 per 50 answers · no expiry</p>
+        </div>
+        <div class="plans-phone">
           <label for="phoneInput">M-Pesa phone number</label>
           <input id="phoneInput" type="tel" autocomplete="tel" placeholder="0712345678">
-          <button id="buyBtn" type="button" class="primary">Buy 50 answers · KSh 25</button>
-          <p id="paymentMessage" class="hint" role="status"></p>
+        </div>
+      </div>
+      <div id="planChoices" class="plan-grid">
+        <article class="plan-card plan-option">
+          <span class="plan-label">Starter</span><h3>50 answers</h3>
+          <div class="plan-price">KSh 25 <span>KSh 25 per 50</span></div>
+          <button type="button" class="primary purchase-plan" data-plan-id="pack_50">Choose bundle</button>
+        </article>
+        <article class="plan-card plan-option">
+          <span class="plan-label">Small pack</span><h3>100 answers</h3>
+          <div class="plan-price">KSh 50 <span>KSh 25 per 50</span></div>
+          <button type="button" class="primary purchase-plan" data-plan-id="pack_100">Choose bundle</button>
+        </article>
+        <article class="plan-card plan-option plan-featured">
+          <span class="plan-label">Popular</span><h3>250 answers</h3>
+          <div class="plan-price">KSh 125 <span>KSh 25 per 50</span></div>
+          <button type="button" class="primary purchase-plan" data-plan-id="pack_250">Choose bundle</button>
+        </article>
+        <article class="plan-card plan-option">
+          <span class="plan-label">Large pack</span><h3>500 answers</h3>
+          <div class="plan-price">KSh 250 <span>KSh 25 per 50</span></div>
+          <button type="button" class="primary purchase-plan" data-plan-id="pack_500">Choose bundle</button>
+        </article>
+        <article class="plan-card plan-option">
+          <span class="plan-label">Value pack</span><h3>1,000 answers</h3>
+          <div class="plan-price">KSh 500 <span>KSh 25 per 50</span></div>
+          <button type="button" class="primary purchase-plan" data-plan-id="pack_1000">Choose bundle</button>
         </article>
       </div>
+      <p id="paymentMessage" class="hint" role="status"></p>
     </section>
   </main>
 
@@ -758,14 +796,14 @@
       event.currentTarget.textContent = show ? "Hide passwords" : "Show passwords";
     });
 
-    async function buyAnswers() {
-      const button = $("buyBtn");
-      button.disabled = true;
+    async function buyAnswers(planId) {
+      const buttons = [...document.querySelectorAll(".purchase-plan")];
+      buttons.forEach((button) => { button.disabled = true; });
       $("paymentMessage").textContent = "Starting M-Pesa payment…";
       try {
         const res = await fetch("/api/payments/checkout", {
           method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: $("phoneInput").value }),
+          body: JSON.stringify({ phone: $("phoneInput").value, plan_id: planId }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Could not start payment.");
@@ -777,7 +815,7 @@
           if (!check.ok) throw new Error(status.error || "Could not check payment.");
           updateUsage(status.usage);
           if (status.status === "paid") {
-            $("paymentMessage").textContent = "Payment received. 50 answers have been added to your account.";
+            $("paymentMessage").textContent = `Payment received. ${data.answers} answers have been added to your account.`;
             return;
           }
           if (status.status === "failed") throw new Error("Payment failed or was cancelled. You can try again.");
@@ -786,7 +824,7 @@
       } catch (error) {
         $("paymentMessage").textContent = error.message;
       } finally {
-        button.disabled = false;
+        buttons.forEach((button) => { button.disabled = false; });
       }
     }
 
@@ -923,7 +961,9 @@
       $("passwordInput").value = "";
       $("authMessage").textContent = "You have signed out.";
     });
-    $("buyBtn").addEventListener("click", buyAnswers);
+    document.querySelectorAll(".purchase-plan").forEach((button) => {
+      button.addEventListener("click", () => buyAnswers(button.dataset.planId));
+    });
 
     updateControls();
     const pageParams = new URLSearchParams(window.location.search);
