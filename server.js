@@ -24,6 +24,8 @@ const MODEL = process.env.COARENA_MODEL || "gpt-6-luna";
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_PUBLIC_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const UNLIMITED_ACCESS_EMAILS = new Set((process.env.UNLIMITED_ACCESS_EMAILS || "")
+  .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
 const LIPWA_BASE_URL = (process.env.LIPWA_BASE_URL || "https://pay.lipwa.app/api").replace(/\/+$/, "");
 const BUNDLE_PRICE_KES = 25;
 const BUNDLE_ANSWERS = 50;
@@ -37,6 +39,11 @@ let inFlight = 0;
 
 function isConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_PUBLIC_KEY && SUPABASE_SECRET_KEY);
+}
+
+function hasUnlimitedAccess(user) {
+  const email = typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
+  return Boolean(email && user.email_confirmed_at && UNLIMITED_ACCESS_EMAILS.has(email));
 }
 
 async function supabaseAuth(pathname, { method = "GET", body, accessToken } = {}) {
@@ -379,7 +386,10 @@ async function handleMe(req, res) {
   if (!user) return sendJson(res, 200, { authenticated: false });
   try {
     const status = await supabaseRpc("screenhelper_account_status", { p_user_id: user.id });
-    return sendJson(res, 200, { authenticated: true, email: user.email, usage: status });
+    const unlimited = hasUnlimitedAccess(user);
+    return sendJson(res, 200, { authenticated: true, email: user.email, usage: {
+      ...status, unlimited_access: unlimited, ...(unlimited ? { can_ask: true } : {}),
+    } });
   } catch (error) {
     return sendJson(res, 503, { error: `Could not load account details: ${error.message}` });
   }
@@ -397,6 +407,7 @@ async function handleLogout(req, res) {
 async function handleCheckout(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
+  if (hasUnlimitedAccess(user)) return sendJson(res, 403, { error: "This account already has unlimited access." });
   if (!process.env.LIPWA_API_KEY || !process.env.LIPWA_CHANNEL_ID || !process.env.PUBLIC_BASE_URL) {
     return sendJson(res, 503, { error: "Payments are not configured yet. Set Lipwa API key, channel ID, and public callback URL." });
   }
@@ -513,16 +524,23 @@ async function handleAsk(req, res) {
     if (!user) return sendJson(res, 401, { error: "Please sign in to continue." });
     const body = await readJson(req);
     const image = validateImage(body.image);
-    consumed = await supabaseRpc("screenhelper_consume_answer", { p_user_id: user.id });
+    const unlimited = hasUnlimitedAccess(user);
+    consumed = unlimited
+      ? { allowed: true, plan: "unlimited" }
+      : await supabaseRpc("screenhelper_consume_answer", { p_user_id: user.id });
     if (!consumed?.allowed) {
       const usage = await supabaseRpc("screenhelper_account_status", { p_user_id: user.id });
       return sendJson(res, 402, { error: "Your 2-hour free trial has ended. Purchase a 50-answer bundle to continue.", usage });
     }
     const answer = await askCoarena(image, body.prompt);
     const usage = await supabaseRpc("screenhelper_account_status", { p_user_id: user.id });
+    if (unlimited) {
+      usage.unlimited_access = true;
+      usage.can_ask = true;
+    }
     sendJson(res, 200, { answer, model: MODEL, usage });
   } catch (error) {
-    if (user && consumed?.allowed) {
+    if (user && consumed?.allowed && consumed.plan === "paid") {
       try { await supabaseRpc("screenhelper_refund_answer", { p_user_id: user.id, p_plan: consumed.plan }); } catch { /* Preserve the original AI error. */ }
     }
     sendJson(res, error.status || 400, { error: error.message || "The request could not be processed." });

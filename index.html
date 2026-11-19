@@ -277,7 +277,7 @@
       <p class="hint">Screenshots and questions are sent to Coarena, which stores prompts and replies. Avoid sharing sensitive information.</p>
     </section>
 
-    <section class="card">
+    <section id="purchaseCard" class="card">
       <h2>Answer packages</h2>
       <p>50 answers for KSh 25. Buy another bundle whenever you need more.</p>
       <label for="phoneInput">M-Pesa phone number</label>
@@ -322,6 +322,7 @@
     let usage = null;
 
     function accessAvailable() {
+      if (usage?.unlimited_access) return true;
       const trialEnds = usage?.trial_ends_at ? Date.parse(usage.trial_ends_at) : 0;
       return trialEnds > Date.now() || Number(usage?.paid_answers || 0) > 0;
     }
@@ -347,6 +348,13 @@
     function updateUsage(nextUsage) {
       if (!nextUsage) return;
       usage = nextUsage;
+      if (usage.unlimited_access) {
+        $("usageText").textContent = "Unlimited access";
+        $("purchaseCard").classList.add("hidden");
+        updateControls();
+        return;
+      }
+      $("purchaseCard").classList.remove("hidden");
       const remaining = Math.max(0, Math.ceil((Date.parse(usage.trial_ends_at) - Date.now()) / 1000));
       const timer = `${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m ${remaining % 60}s`;
       if (remaining > 0) {
