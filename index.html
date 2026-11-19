@@ -187,10 +187,9 @@
     .plan-price span { color: var(--muted); font-size: 0.86rem; font-weight: 500; letter-spacing: 0; }
     .plan-current { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-bottom: 20px; border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 0.85rem; }
     .plan-current p { margin: 0; color: var(--ink); }
-    .plan-purchase-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 4px; }
-    .plan-purchase-head h3 { margin: 0; font-size: 1.1rem; }
-    .plan-purchase-head p { margin: 3px 0 0; color: var(--muted); font-size: 0.84rem; }
-    .plans-phone { flex: 0 1 390px; margin: 0; }
+    .plans-bundles-head { margin: 0 0 14px; }
+    .plans-bundles-head h3 { margin: 0; font-size: 1.1rem; }
+    .plans-bundles-head p { margin: 3px 0 0; color: var(--muted); font-size: 0.84rem; }
     .plan-featured { border-color: rgba(2,116,190,0.35); }
     .plan-option { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 16px; text-align: left; }
     .plan-option .plan-label { min-height: 1.2em; }
@@ -199,7 +198,25 @@
     .plan-option .plan-price span { display: block; font-size: 0.76rem; }
     .plan-option p { margin: 0; font-size: 0.8rem; }
     .plan-option button { width: 100%; margin-top: auto; }
-    .plans-phone { max-width: 440px; margin: 0 0 16px; }
+    #paymentDialog {
+      width: min(460px, calc(100vw - 32px)); max-width: none; padding: 26px;
+      border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
+      box-shadow: 0 24px 80px rgba(15, 35, 55, 0.25);
+      opacity: 0; transform: translateY(14px) scale(0.98);
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+    #paymentDialog[open] { opacity: 1; transform: translateY(0) scale(1); animation: payment-dialog-enter 180ms ease-out both; }
+    @keyframes payment-dialog-enter { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    #paymentDialog::backdrop { background: rgba(19, 31, 44, 0.48); backdrop-filter: blur(3px); }
+    .payment-dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .payment-dialog-head h2 { margin: 2px 0 4px; font-size: 1.35rem; }
+    .payment-dialog-head p { margin: 0 0 20px; color: var(--muted); }
+    .dialog-close { flex: 0 0 38px; min-width: 38px; min-height: 38px; padding: 6px; font-size: 1.2rem; }
+    #paymentDialog input { margin-bottom: 8px; }
+    .payment-help { margin: 0; color: var(--muted); font-size: 0.82rem; }
+    #paymentMessage { min-height: 1.4em; margin: 14px 0; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .dialog-actions button { flex: 0 1 auto; }
     kbd { font-family: ui-monospace, monospace; font-size: 0.75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--card); }
     @media (max-width: 760px) {
       main { padding: 22px 18px 40px; }
@@ -217,8 +234,6 @@
       .workspace-grid { gap: 8px; }
       textarea { min-height: 66px; margin-bottom: 8px; }
       #output { padding: 13px; }
-      .plan-purchase-head { align-items: stretch; flex-direction: column; gap: 12px; margin-bottom: 14px; }
-      .plans-phone { width: 100%; max-width: none; margin: 0; }
       .plan-current { align-items: flex-start; flex-direction: column; gap: 4px; margin-bottom: 16px; }
       .workspace-side .hint { margin: 6px 0 0; font-size: 0.72rem; }
       .privacy-note { margin-top: 8px; font-size: 0.72rem; }
@@ -240,6 +255,9 @@
       .price-tag { align-self: flex-start; }
       .auth-actions { flex-direction: column; }
       .auth-actions button { width: 100%; }
+      #paymentDialog { padding: 22px 18px; }
+      .dialog-actions { flex-direction: column-reverse; }
+      .dialog-actions button { width: 100%; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
@@ -396,15 +414,9 @@
         <strong>Your current access</strong>
         <p id="planCurrentStatus">2 hours of access for every new account.</p>
       </div>
-      <div class="plan-purchase-head">
-        <div>
-          <h3>Choose an answer bundle</h3>
-          <p>One-time M-Pesa payment · KSh 25 per 50 answers · no expiry</p>
-        </div>
-        <div class="plans-phone">
-          <label for="phoneInput">M-Pesa phone number</label>
-          <input id="phoneInput" type="tel" autocomplete="tel" placeholder="0712345678">
-        </div>
+      <div class="plans-bundles-head">
+        <h3>Choose an answer bundle</h3>
+        <p>One-time M-Pesa payment · KSh 25 per 50 answers · no expiry</p>
       </div>
       <div id="planChoices" class="plan-grid">
         <article class="plan-card plan-option">
@@ -433,8 +445,26 @@
           <button type="button" class="primary purchase-plan" data-plan-id="pack_1000">Choose bundle</button>
         </article>
       </div>
-      <p id="paymentMessage" class="hint" role="status"></p>
     </section>
+
+    <dialog id="paymentDialog" aria-labelledby="paymentDialogTitle" aria-describedby="paymentDialogDescription">
+      <div class="payment-dialog-head">
+        <div>
+          <span class="plan-label">Secure checkout</span>
+          <h2 id="paymentDialogTitle">Pay with M-Pesa</h2>
+          <p id="selectedPlanText">Choose an answer bundle</p>
+        </div>
+        <button id="closePaymentDialog" type="button" class="dialog-close" aria-label="Close checkout">×</button>
+      </div>
+      <label for="phoneInput">M-Pesa phone number</label>
+      <input id="phoneInput" type="tel" autocomplete="tel" inputmode="tel" placeholder="0712345678" required>
+      <p id="paymentDialogDescription" class="payment-help">We’ll send a payment prompt to this number. Enter your M-Pesa PIN on your phone to confirm.</p>
+      <p id="paymentMessage" class="hint" role="status" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="cancelPaymentDialog" type="button">Cancel</button>
+        <button id="confirmPurchaseBtn" type="button" class="primary">Send M-Pesa prompt</button>
+      </div>
+    </dialog>
   </main>
 
   <script>
@@ -448,12 +478,15 @@
     const historyCard = $("historyCard"), historyList = $("history");
     const authCard = $("authCard"), authLayout = $("authLayout"), resetCard = $("resetCard");
     const accountCard = $("accountCard"), appArea = $("appArea"), plansArea = $("plansArea");
+    const paymentDialog = $("paymentDialog");
 
     let stream = null;
     let busy = false;
     let lastAnswer = null;
     let authenticated = false;
     let usage = null;
+    let selectedPlanId = null;
+    let paymentBusy = false;
 
     function accessAvailable() {
       if (usage?.unlimited_access) return true;
@@ -808,9 +841,26 @@
       event.currentTarget.textContent = show ? "Hide passwords" : "Show passwords";
     });
 
+    function openPaymentDialog(button) {
+      const card = button.closest(".plan-option");
+      selectedPlanId = button.dataset.planId;
+      const bundle = card.querySelector("h3").textContent.trim();
+      const price = card.querySelector(".plan-price").childNodes[0].textContent.trim();
+      $("selectedPlanText").textContent = `${bundle} · ${price}`;
+      $("paymentMessage").textContent = "";
+      $("confirmPurchaseBtn").disabled = false;
+      if (!paymentDialog.open) paymentDialog.showModal();
+      window.requestAnimationFrame(() => $("phoneInput").focus());
+    }
+
     async function buyAnswers(planId) {
+      if (!$("phoneInput").reportValidity()) return;
+      paymentBusy = true;
       const buttons = [...document.querySelectorAll(".purchase-plan")];
       buttons.forEach((button) => { button.disabled = true; });
+      $("confirmPurchaseBtn").disabled = true;
+      $("closePaymentDialog").disabled = true;
+      $("cancelPaymentDialog").disabled = true;
       $("paymentMessage").textContent = "Starting M-Pesa payment…";
       try {
         const res = await fetch("/api/payments/checkout", {
@@ -836,7 +886,11 @@
       } catch (error) {
         $("paymentMessage").textContent = error.message;
       } finally {
+        paymentBusy = false;
         buttons.forEach((button) => { button.disabled = false; });
+        $("confirmPurchaseBtn").disabled = false;
+        $("closePaymentDialog").disabled = false;
+        $("cancelPaymentDialog").disabled = false;
       }
     }
 
@@ -974,7 +1028,15 @@
       $("authMessage").textContent = "You have signed out.";
     });
     document.querySelectorAll(".purchase-plan").forEach((button) => {
-      button.addEventListener("click", () => buyAnswers(button.dataset.planId));
+      button.addEventListener("click", () => openPaymentDialog(button));
+    });
+    $("confirmPurchaseBtn").addEventListener("click", () => {
+      if (selectedPlanId) buyAnswers(selectedPlanId);
+    });
+    $("closePaymentDialog").addEventListener("click", () => paymentDialog.close());
+    $("cancelPaymentDialog").addEventListener("click", () => paymentDialog.close());
+    paymentDialog.addEventListener("cancel", (event) => {
+      if (paymentBusy) event.preventDefault();
     });
 
     updateControls();
