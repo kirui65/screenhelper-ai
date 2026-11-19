@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ScreenHelper AI</title>
+  <script>if (window.location.pathname === "/plans") document.documentElement.classList.add("plans-route");</script>
   <style>
     :root {
       color-scheme: light;
@@ -23,6 +24,8 @@
       --shadow: 0 14px 36px rgba(20, 35, 50, 0.08);
     }
     * { box-sizing: border-box; }
+    .plans-route #authLayout { display: none !important; }
+    .plans-route #plansLoading { display: block !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -374,6 +377,7 @@
     </section>
     </div>
 
+    <div id="plansLoading" class="card hidden" role="status">Loading your plans…</div>
     <section id="plansArea" class="plans-page hidden">
       <div class="plans-top">
         <div>
@@ -659,6 +663,8 @@
 
     function showAccount(data) {
       authenticated = true;
+      document.documentElement.classList.remove("plans-route");
+      $("plansLoading").classList.add("hidden");
       authLayout.classList.add("hidden");
       authCard.classList.add("hidden");
       resetCard.classList.add("hidden");
@@ -675,8 +681,14 @@
         const res = await fetch("/api/me", { credentials: "same-origin" });
         const data = await res.json();
         if (res.ok && data.authenticated) showAccount(data);
-        else if (data.error) $("authMessage").textContent = data.error;
+        else {
+          document.documentElement.classList.remove("plans-route");
+          $("plansLoading").classList.add("hidden");
+          if (data.error) $("authMessage").textContent = data.error;
+        }
       } catch {
+        document.documentElement.classList.remove("plans-route");
+        $("plansLoading").classList.add("hidden");
         $("authMessage").textContent = "Could not connect to the server.";
       }
     }
