@@ -173,6 +173,9 @@
     #accountCard .output-head { margin: 0; }
     #accountEmail { font-size: 0.95rem; }
     #usageText { margin: 2px 0 0; }
+    .account-plan-line { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+    .plan-badge { display: inline-flex; align-items: center; width: fit-content; padding: 3px 9px; border-radius: 999px; background: #e8f3fb; color: #075985; font-size: 0.72rem; font-weight: 750; line-height: 1.45; white-space: nowrap; }
+    .plan-current-label { display: grid; gap: 5px; }
     .account-actions { display: flex; align-items: center; gap: 8px; }
     .button-link { display: inline-flex; align-items: center; justify-content: center; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: white; text-decoration: none; font-weight: 700; font-size: 0.85rem; }
     .button-link:hover { background: var(--accent-hover); color: white; }
@@ -356,7 +359,10 @@
 
     <section id="accountCard" class="card hidden">
       <div class="output-head">
-        <div><strong id="accountEmail"></strong><p id="usageText" class="hint"></p></div>
+        <div>
+          <strong id="accountEmail"></strong>
+          <div class="account-plan-line"><span id="currentPlanBadge" class="plan-badge">Free trial</span><p id="usageText" class="hint"></p></div>
+        </div>
         <div class="account-actions">
           <a id="upgradeBtn" class="button-link" href="/plans">Upgrade</a>
           <button id="logoutBtn" type="button" class="small">Sign out</button>
@@ -428,7 +434,7 @@
         <p>This account already has unlimited answer access.</p>
       </div>
       <div class="plan-current">
-        <strong>Your current access</strong>
+        <div class="plan-current-label"><strong>Current plan</strong><span id="planCurrentBadge" class="plan-badge">Free trial</span></div>
         <p id="planCurrentStatus">2 hours of access for every new account.</p>
       </div>
       <div class="plans-bundles-head">
@@ -691,6 +697,12 @@
       usage = nextUsage;
       const remaining = Math.max(0, Math.ceil((Date.parse(usage.trial_ends_at) - Date.now()) / 1000));
       const timer = `${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m ${remaining % 60}s`;
+      const paidAnswers = Number(usage.paid_answers || 0);
+      const planLabel = usage.unlimited_access ? "Unlimited access"
+        : remaining > 0 ? "Free trial"
+          : paidAnswers > 0 ? "Answer credits" : "No active plan";
+      $("currentPlanBadge").textContent = planLabel;
+      $("planCurrentBadge").textContent = planLabel;
       if (usage.unlimited_access) {
         $("usageText").textContent = "Unlimited access";
         $("upgradeBtn").classList.add("hidden");
@@ -704,14 +716,14 @@
       $("planChoices").classList.remove("hidden");
       $("unlimitedPlanNotice").classList.add("hidden");
       if (remaining > 0) {
-        $("usageText").textContent = `Free trial: ${timer} remaining · ${usage.paid_answers || 0} paid answers`;
-        $("planCurrentStatus").textContent = `Free trial active · ${timer} remaining.`;
-      } else if (usage.paid_answers > 0) {
-        $("usageText").textContent = `${usage.paid_answers} paid answers remaining`;
-        $("planCurrentStatus").textContent = `${usage.paid_answers} paid answers are ready to use.`;
+        $("usageText").textContent = `${timer} remaining${paidAnswers ? ` · ${paidAnswers} answer credits saved` : ""}`;
+        $("planCurrentStatus").textContent = `Trial active · ${timer} remaining${paidAnswers ? ` · ${paidAnswers} answer credits saved for after the trial` : ""}.`;
+      } else if (paidAnswers > 0) {
+        $("usageText").textContent = `${paidAnswers} answer credits available`;
+        $("planCurrentStatus").textContent = `${paidAnswers} paid answers available. One credit is used for each question.`;
       } else {
         $("usageText").textContent = "Free trial ended · upgrade to keep asking questions.";
-        $("planCurrentStatus").textContent = "Your free trial has ended. Choose an answer bundle to continue.";
+        $("planCurrentStatus").textContent = "Trial ended. Choose an answer bundle to continue.";
       }
       updateControls();
     }
