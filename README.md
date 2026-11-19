@@ -22,6 +22,6 @@ The Lipwa callback must be reachable at `${PUBLIC_BASE_URL}/api/lipwa/webhook`. 
 
 New accounts get unlimited answers during the first two hours after account creation. After that, each successful KSh 25 payment adds 50 answers. Failed AI requests restore a consumed paid answer.
 
-The default model is `gpt-6-1-terra`. Set `COARENA_MODEL` in `.env` to another image-capable model offered by Coarena. The server reads `.env` directly and has no runtime package dependencies. In production, set `NODE_ENV=production` so authentication cookies use the `Secure` attribute.
+The default model is `gpt-6-luna`, which supports image inputs and is listed as a free-tier option by Coarena. Set `COARENA_MODEL` in `.env` to another image-capable model offered by Coarena. The server reads `.env` directly and has no runtime package dependencies. In production, set `NODE_ENV=production` so authentication cookies use the `Secure` attribute.
 
 The screenshot and prompt are sent to Coarena for inference. Coarena's Model API documentation says it stores every prompt and reply. Do not submit sensitive information.

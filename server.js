@@ -20,7 +20,7 @@ try {
 
 const PORT = Number(process.env.PORT || 3000);
 const COARENA_URL = (process.env.COARENA_BASE_URL || "https://coarena.ai/api/v1").replace(/\/+$/, "");
-const MODEL = process.env.COARENA_MODEL || "gpt-6-1-terra";
+const MODEL = process.env.COARENA_MODEL || "gpt-6-luna";
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_PUBLIC_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
