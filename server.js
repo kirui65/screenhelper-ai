@@ -618,6 +618,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && paymentMatch) return void handlePaymentStatus(req, res, paymentMatch[1]);
   if (req.method === "POST" && url.pathname === "/api/lipwa/webhook") return void handleLipwaWebhook(req, res);
   if (req.method === "POST" && url.pathname === "/api/ask") return void handleAsk(req, res);
+  if (req.method === "GET" && url.pathname === "/google5cb5413991036570.html") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+    return fs.createReadStream(path.join(ROOT, "google5cb5413991036570.html")).pipe(res);
+  }
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/plans")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
     return fs.createReadStream(path.join(ROOT, "index.html")).pipe(res);
