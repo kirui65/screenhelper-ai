@@ -632,6 +632,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
     return fs.createReadStream(path.join(ROOT, "google5cb5413991036570.html")).pipe(res);
   }
+  if (req.method === "GET" && url.pathname === "/privacy") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+    return fs.createReadStream(path.join(ROOT, "privacy.html")).pipe(res);
+  }
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/plans")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
     return fs.createReadStream(path.join(ROOT, "index.html")).pipe(res);
