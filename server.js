@@ -93,6 +93,22 @@ async function supabaseRpc(name, args) {
   return supabaseAdmin(`rpc/${name}`, { method: "POST", body: args });
 }
 
+async function claimAndroidDevice(req, userId) {
+  // Browser sessions use secure cookies. Native Android requests use a bearer
+  // token and must include Android's app-scoped ID before any trial is granted.
+  if (!/^Bearer\s+/i.test(req.headers.authorization || "")) return { allowed: true, native: false };
+  const androidId = req.headers["x-screenhelper-device-id"];
+  if (typeof androidId !== "string" || !/^[a-f0-9]{16,64}$/i.test(androidId)) {
+    const error = new Error("Update ScreenHelper to the latest version to verify this device.");
+    error.status = 426;
+    throw error;
+  }
+  const deviceHash = require("node:crypto").createHmac("sha256", SUPABASE_SECRET_KEY)
+    .update(`screenhelper-android-device-v1:${androidId.toLowerCase()}`)
+    .digest("hex");
+  return supabaseRpc("screenhelper_claim_device", { p_user_id: userId, p_device_hash: deviceHash });
+}
+
 function cookies(req) {
   return Object.fromEntries((req.headers.cookie || "").split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
     const index = part.indexOf("=");
@@ -403,13 +419,17 @@ async function handleMe(req, res) {
   const user = await getUser(req, res);
   if (!user) return sendJson(res, 200, { authenticated: false });
   try {
+    const deviceClaim = await claimAndroidDevice(req, user.id);
+    if (!deviceClaim?.allowed) return sendJson(res, 200, { authenticated: true, email: user.email, usage: {
+      device_blocked: true, can_ask: false, unlimited_access: hasUnlimitedAccess(user),
+    } });
     const status = await supabaseRpc("screenhelper_account_status", { p_user_id: user.id });
     const unlimited = hasUnlimitedAccess(user);
     return sendJson(res, 200, { authenticated: true, email: user.email, usage: {
       ...status, unlimited_access: unlimited, ...(unlimited ? { can_ask: true } : {}),
     } });
   } catch (error) {
-    return sendJson(res, 503, { error: `Could not load account details: ${error.message}` });
+    return sendJson(res, error.status || 503, { error: error.message ? `Could not load account details: ${error.message}` : "Could not load account details." });
   }
 }
 
@@ -425,6 +445,12 @@ async function handleLogout(req, res) {
 async function handleCheckout(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
+  try {
+    const claim = await claimAndroidDevice(req, user.id);
+    if (!claim?.allowed) return sendJson(res, 403, { error: "This device has already used its free trial on another account. Sign in with the account first used on this device to continue." });
+  } catch (error) {
+    return sendJson(res, error.status || 503, { error: error.message || "Could not verify this device." });
+  }
   if (hasUnlimitedAccess(user)) return sendJson(res, 403, { error: "This account already has unlimited access." });
   if (!process.env.LIPWA_API_KEY || !process.env.LIPWA_CHANNEL_ID || !process.env.PUBLIC_BASE_URL) {
     return sendJson(res, 503, { error: "Payments are not configured yet. Set Lipwa API key, channel ID, and public callback URL." });
@@ -581,6 +607,8 @@ async function handleAsk(req, res) {
     if (!isConfigured()) throw Object.assign(new Error("Supabase is not configured yet."), { status: 503 });
     user = await getUser(req, res);
     if (!user) return sendJson(res, 401, { error: "Please sign in to continue." });
+    const deviceClaim = await claimAndroidDevice(req, user.id);
+    if (!deviceClaim?.allowed) return sendJson(res, 403, { error: "This device has already used its free trial on another account. Sign in with the account first used on this device to continue." });
     const body = await readJson(req);
     const image = validateImage(body.image);
     const unlimited = hasUnlimitedAccess(user);

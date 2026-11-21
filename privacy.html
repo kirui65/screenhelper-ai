@@ -30,10 +30,11 @@
       <li><strong>Account information:</strong> your email address and authentication data used to create and secure your account. Supabase provides authentication and account storage. If you choose Google sign-in, Google shares the identity information needed to sign you in.</li>
       <li><strong>Screen captures and questions:</strong> screen sharing starts only after you grant Android permission. A frame and any question you enter are sent when you tap “Get an answer.” The frame is processed by ScreenHelper’s server and sent to Coarena to generate a response. Coarena stores prompts and replies. Avoid including sensitive information in a shared screen or question.</li>
       <li><strong>Usage and payment records:</strong> account usage, answer credits, and payment status are processed to provide the trial and paid answer bundles. Lipwa processes M-Pesa checkouts; ScreenHelper stores payment references and settlement status needed to confirm purchases and prevent duplicate credits.</li>
+      <li><strong>Android device identifier:</strong> on Android, the app sends Android's app-scoped ID when you sign in. ScreenHelper converts it to a keyed hash on the server and stores that hash with the first account that claims the device. We use it only to enforce one free-trial account per app/device and prevent repeat trials. We do not use it for advertising. The association is retained to prevent creating another account from resetting a trial; deleting your account does not automatically remove it. Android may change this identifier after a factory reset or if the app's signing key changes.</li>
     </ul>
 
     <h2>How we use information</h2>
-    <p>We use this information to sign you in, answer questions about a screen frame you choose to share, manage answer credits and payments, maintain the service, and respond to support requests. ScreenHelper does not send a screen frame until you request an answer.</p>
+    <p>We use this information to sign you in, enforce the one-trial-per-Android-device limit, answer questions about a screen frame you choose to share, manage answer credits and payments, maintain the service, and respond to support requests. ScreenHelper does not send a screen frame until you request an answer.</p>
 
     <h2>Service providers</h2>
     <p>We use Supabase for authentication and account data, Coarena for AI processing, and Lipwa for payment processing. These providers process information as needed to provide their services. Google processes sign-in when you choose Google as your login method.</p>

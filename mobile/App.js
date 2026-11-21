@@ -4,6 +4,7 @@ import {
   AppState,
   ActivityIndicator,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +19,7 @@ import {
   View,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as Application from "expo-application";
 import * as Linking from "expo-linking";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -55,7 +57,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
   : null;
 
 const palette = {
-  bg: "#f5f8fb", ink: "#172b3b", muted: "#647586", line: "#dbe5ec",
+  bg: "#f3f7fb", ink: "#12283d", muted: "#5d7184", line: "#dce6ef",
   blue: "#0878bd", blueDark: "#05629d", white: "#ffffff", green: "#16845b",
 };
 const bundles = [
@@ -78,6 +80,9 @@ async function api(path, session, options = {}) {
       headers: {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        ...(session?.access_token && Platform.OS === "android"
+          ? { "X-ScreenHelper-Device-Id": Application.getAndroidId() }
+          : {}),
         ...options.headers,
       },
     });
@@ -96,6 +101,7 @@ function Button({ title, onPress, secondary = false, disabled = false, style }) 
   return (
     <TouchableOpacity
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       activeOpacity={0.82}
       disabled={disabled}
       onPress={onPress}
@@ -273,6 +279,9 @@ export default function App() {
   const [usage, setUsage] = useState(null);
   const [image, setImage] = useState(null);
   const [captureActive, setCaptureActive] = useState(false);
+  const [frameReady, setFrameReady] = useState(false);
+  const [capturedContentVisible, setCapturedContentVisible] = useState(null);
+  const [captureError, setCaptureError] = useState("");
   const [prompt, setPrompt] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -285,6 +294,8 @@ export default function App() {
   const [showBundles, setShowBundles] = useState(false);
   const paymentActionInFlight = useRef(false);
   const answerActionInFlight = useRef(false);
+  const screenScrollRef = useRef(null);
+  const answerScrollPending = useRef(false);
   const { width: viewportWidth } = useWindowDimensions();
   const compact = viewportWidth < 430;
 
@@ -336,44 +347,79 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (usage?.device_blocked && captureActive) void stopScreenSharing();
+  }, [usage?.device_blocked, captureActive]);
+
+  useEffect(() => {
     if (!session) return undefined;
-    ScreenStream.isActive().then(setCaptureActive).catch(() => setCaptureActive(false));
+    ScreenStream.status().then((status) => {
+      setCaptureActive(Boolean(status.active));
+      setFrameReady(Boolean(status.hasFrame && status.frameAgeMs < 4000));
+      setCapturedContentVisible(status.contentVisible ?? null);
+      setCaptureError(typeof status.error === "string" ? status.error : "");
+    }).catch(() => setCaptureActive(false));
     return undefined;
   }, [session]);
 
   useEffect(() => {
     if (!captureActive) return undefined;
-    const timer = setInterval(() => {
-      ScreenStream.isActive().then((active) => {
-        setCaptureActive(active);
-        if (!active) setImage(null);
-      }).catch(() => setCaptureActive(false));
-    }, 2000);
-    return () => clearInterval(timer);
+    let active = true;
+    let requestPending = false;
+    const refreshStatus = async () => {
+      if (requestPending) return;
+      requestPending = true;
+      try {
+        const status = await ScreenStream.status();
+        if (!active) return;
+        setCaptureActive(Boolean(status.active));
+        setFrameReady(Boolean(status.hasFrame && status.frameAgeMs < 4000));
+        setCapturedContentVisible(status.contentVisible ?? null);
+        setCaptureError(typeof status.error === "string" ? status.error : "");
+      } catch {
+        if (active) setCaptureActive(false);
+      } finally {
+        requestPending = false;
+      }
+    };
+    refreshStatus();
+    const timer = setInterval(refreshStatus, 500);
+    return () => { active = false; clearInterval(timer); };
   }, [captureActive]);
 
   async function startScreenSharing() {
     setError("");
+    setCaptureError("");
+    setFrameReady(false);
     try {
       await ScreenStream.start();
       let active = false;
       for (let attempt = 0; attempt < 20 && !active; attempt += 1) {
         await wait(250);
-        active = await ScreenStream.isActive();
+        const status = await ScreenStream.status();
+        if (status.error) {
+          setCaptureError(status.error);
+          throw new Error(status.error);
+        }
+        active = Boolean(status.active);
+        setFrameReady(Boolean(status.hasFrame && status.frameAgeMs < 4000));
+        setCapturedContentVisible(status.contentVisible ?? null);
       }
       if (!active) throw new Error("Android permission was granted, but screen sharing did not start. Please try again.");
       setCaptureActive(true);
       setImage(null);
       setAnswer("");
     } catch (e) {
-      setError(e.message || "Could not start Android screen sharing.");
+      setFrameReady(false);
+      setCaptureError(e.message || "Could not start Android screen sharing.");
     }
   }
 
   async function stopScreenSharing() {
     try { await ScreenStream.stop(); } catch { /* Android may already have stopped the projection. */ }
     setCaptureActive(false);
-    setImage(null);
+    setFrameReady(false);
+    setCapturedContentVisible(null);
+    setCaptureError("");
   }
 
   async function captureCurrentScreen() {
@@ -382,19 +428,22 @@ export default function App() {
       const data = await ScreenStream.captureFrame();
       if (!data) throw new Error("No frame is ready yet. Wait a moment and try again.");
       setImage({ uri: data, data });
+      setCaptureError("");
       setAnswer("");
     } catch (e) {
-      setError(e.message || "Could not capture the shared screen.");
+      setCaptureError(e.message || "Could not capture the shared screen.");
     }
   }
 
   async function ask() {
-    if (answerActionInFlight.current || !session || !captureActive) return;
+    if (answerActionInFlight.current || !session || !image) return;
     if (typeof image?.data !== "string" || !/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image.data)) {
       setError("Capture a screen frame before asking a question.");
       return;
     }
     answerActionInFlight.current = true;
+    answerScrollPending.current = true;
+    Keyboard.dismiss();
     setBusy(true); setError(""); setAnswer("");
     try {
       const data = await api("/api/ask", session, {
@@ -489,67 +538,162 @@ export default function App() {
   if (passwordRecovery) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" backgroundColor={palette.bg} /><AuthScreen passwordRecovery recoveryMessage={recoveryMessage} onPasswordUpdated={() => { setPasswordRecovery(false); setRecoveryMessage(""); }} /></SafeAreaView>;
   if (!session) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" backgroundColor={palette.bg} /><AuthScreen /></SafeAreaView>;
 
-  const remaining = usage?.unlimited_access
-    ? "Unlimited access"
-    : usage?.trial_seconds_remaining > 0
-      ? "Free trial active"
-      : `${usage?.paid_answers ?? 0} answers remaining`;
+  const remaining = usage == null
+    ? "Loading your access…"
+    : usage.device_blocked
+      ? "Device already linked to another account"
+    : usage.unlimited_access
+      ? "Unlimited access"
+      : usage.trial_seconds_remaining > 0
+        ? "Free trial active"
+        : `${usage.paid_answers ?? 0} answers remaining`;
+  const captureHint = capturedContentVisible === false
+    ? "Android cannot currently see the selected app. Bring it onscreen or place it beside ScreenHelper in split screen."
+    : frameReady
+      ? "A fresh screen frame is ready to capture."
+      : captureActive
+        ? "Waiting for Android's first screen frame…"
+        : "";
+  const frameTitle = !captureActive
+    ? "Your screen preview goes here"
+    : capturedContentVisible === false
+      ? "The shared app is hidden"
+      : frameReady
+        ? "Ready to capture"
+        : "Waiting for Android…";
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={palette.bg} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={[styles.page, compact && styles.pageCompact]} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={screenScrollRef} contentContainerStyle={[styles.page, compact && styles.pageCompact]} keyboardShouldPersistTaps="handled">
           <View style={styles.topBar}>
-            <View style={styles.topBarTitle}><Text style={styles.eyebrow}>SCREENHELPER AI</Text><Text style={[styles.screenTitle, compact && styles.screenTitleCompact]}>Ask about your screen</Text></View>
-            <TouchableOpacity accessibilityRole="button" onPress={signOut}><Text style={styles.linkText}>Sign out</Text></TouchableOpacity>
-          </View>
-          <View style={styles.usage}><View style={styles.usageDot} /><Text style={styles.usageText}>{remaining}</Text></View>
-          <View style={[styles.card, compact && styles.cardCompact]}>
-            <Text style={styles.cardTitle}>Share another app</Text>
-            <Text style={styles.cardCopy}>Start Android screen sharing and choose the app or display Android offers. ScreenHelper samples frames on this device; it sends a captured frame and your question to ScreenHelper and Coarena only when you tap Get an answer. Keep ScreenHelper beside the other app in split screen when supported.</Text>
-            {captureActive ? <View style={styles.sharingStatus}><View style={styles.sharingDot} /><Text style={styles.sharingText}>Android screen sharing is active</Text></View> : null}
-            {image ? <Image accessibilityLabel="Captured screen preview" source={{ uri: image.uri }} resizeMode="contain" style={[styles.preview, { height: Math.min(240, Math.max(100, viewportWidth * 0.55)) }]} /> : <View style={[styles.emptyPreview, { minHeight: Math.min(150, Math.max(90, viewportWidth * 0.34)) }]}><Text style={styles.emptyIcon}>▧</Text><Text style={styles.emptyText}>Captured screen preview appears here</Text></View>}
-            <View style={[styles.buttonRow, compact && styles.buttonRowCompact]}>
-              {captureActive
-                ? <Button title="Stop sharing" onPress={stopScreenSharing} secondary style={[styles.halfButton, compact && styles.fullButton]} />
-                : <Button title="Start screen sharing" onPress={startScreenSharing} style={[styles.halfButton, compact && styles.fullButton]} />}
-              <Button title="Capture current screen" onPress={captureCurrentScreen} disabled={!captureActive} secondary style={[styles.halfButton, compact && styles.fullButton]} />
+            <View style={styles.brandLockup}>
+              <View style={styles.brandMarkSmall}><Text style={styles.brandMarkSmallText}>S</Text></View>
+              <View><Text style={styles.brandName}>SCREENHELPER</Text><Text style={styles.brandCaption}>AI screen reader</Text></View>
             </View>
+            <TouchableOpacity accessibilityRole="button" onPress={signOut} style={styles.signOutButton}><Text style={styles.signOutText}>Sign out</Text></TouchableOpacity>
           </View>
-          <View style={[styles.card, compact && styles.cardCompact]}>
-            <Text style={styles.cardTitle}>What would you like to know?</Text>
-            <TextInput multiline onChangeText={setPrompt} placeholder="Ask a question about the shared screen…" placeholderTextColor="#8998a6" style={styles.prompt} textAlignVertical="top" value={prompt} />
-            <Button title={busy ? "Reading your screen…" : "Get an answer"} onPress={ask} disabled={!image || !captureActive || busy || !API_URL} />
-            {busy ? <ActivityIndicator color={palette.blue} style={styles.loader} /> : null}
+          <View style={styles.hero}>
+            <Text style={styles.heroTitle}>What are you looking at?</Text>
+            <Text style={styles.heroSubtitle}>Capture a screen, ask a question, get a clear answer.</Text>
           </View>
-          {!usage?.unlimited_access ? <View style={[styles.card, compact && styles.cardCompact]}>
-            <Text style={styles.cardTitle}>Answer bundles</Text>
-            <Text style={styles.cardCopy}>Pay securely with M-Pesa. Credits are added only after the payment is confirmed.</Text>
+
+          <View style={styles.usageRow}>
+            <View style={[styles.usage, usage == null && styles.usageLoading]}><View style={[styles.usageDot, usage == null && styles.usageDotLoading]} /><Text style={[styles.usageText, usage == null && styles.usageTextLoading]}>{remaining}</Text></View>
+          </View>
+
+          {usage?.device_blocked ? <View accessibilityLiveRegion="polite" style={styles.deviceBlockedBox}>
+            <Text style={styles.deviceBlockedTitle}>This device has already used its free trial</Text>
+            <Text style={styles.deviceBlockedText}>One free trial is available per Android device. Sign in with the account first used on this device to continue. Creating another account won’t reset the trial.</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={signOut} style={styles.deviceBlockedAction}><Text style={styles.deviceBlockedActionText}>Sign out and switch account</Text></TouchableOpacity>
+          </View> : null}
+
+          <View style={[styles.card, styles.captureCard]}>
+            <View style={styles.stepHeading}>
+              <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
+              <View style={styles.stepHeadingCopy}>
+                <Text style={styles.stepEyebrow}>FIRST</Text>
+                <Text style={styles.cardTitle}>Share an app</Text>
+              </View>
+              {captureActive ? <View style={styles.livePill}><View style={styles.liveDot} /><Text style={styles.liveText}>SHARING</Text></View> : null}
+            </View>
+            <Text style={styles.cardCopy}>{captureActive ? "Switch to the app you need help with. Keep it visible in split screen if Android says it is hidden." : "Tap below, then choose an app or your whole screen in Android’s sharing prompt."}</Text>
+
+            {!captureActive ? <Button title={image ? "Share a different app" : "Start screen sharing"} onPress={startScreenSharing} disabled={Boolean(usage?.device_blocked)} style={styles.startButton} /> : null}
+
+            {captureActive || image ? <View style={styles.captureStepHeading}>
+              <View style={[styles.stepNumber, image && styles.stepNumberComplete]}><Text style={styles.stepNumberText}>2</Text></View>
+              <Text style={styles.captureStepTitle}>Capture a frame</Text>
+            </View> : null}
+
+            {image ? (
+              <Image accessibilityLabel="Captured screen preview" source={{ uri: image.uri }} resizeMode="contain" style={[styles.preview, { height: Math.min(280, Math.max(170, viewportWidth * 0.62)) }]} />
+            ) : (
+              <View style={[styles.framePlaceholder, { height: Math.min(230, Math.max(170, viewportWidth * 0.48)) }]}>
+                <View style={styles.frameIcon}><Text style={styles.frameIconText}>{captureActive ? "↗" : "▧"}</Text></View>
+                <Text style={styles.frameTitle}>{frameTitle}</Text>
+                <Text accessibilityLiveRegion="polite" style={styles.frameSubtitle}>{captureActive ? captureHint : "Your screen stays on your phone until you ask for an answer."}</Text>
+              </View>
+            )}
+
+            {image ? <View style={styles.frameReadyRow}><View style={styles.readyDot} /><Text style={styles.frameReadyText}>Frame captured · not sent yet</Text></View> : null}
+
+            {captureActive ? <View style={[styles.buttonRow, compact && styles.buttonRowCompact]}>
+              <Button
+                title={capturedContentVisible === false ? "Open the app" : frameReady ? "Capture frame" : "Waiting for screen…"}
+                onPress={captureCurrentScreen}
+                disabled={!frameReady || capturedContentVisible === false}
+                style={[styles.captureButton, styles.halfButton, compact && styles.fullButton]}
+              />
+              <Button title="Stop sharing" onPress={stopScreenSharing} secondary style={[styles.stopButton, compact && styles.fullButton]} />
+            </View> : null}
+            {captureError ? <Text accessibilityLiveRegion="polite" style={styles.inlineCaptureError}>{captureError}</Text> : null}
+            {!API_URL ? <Text style={styles.inlineCaptureError}>ScreenHelper is not connected to its answer service yet.</Text> : null}
+          </View>
+
+          <View style={[styles.card, styles.askCard]}>
+            <View style={styles.stepHeading}>
+              <View style={[styles.stepNumber, image && styles.stepNumberComplete]}><Text style={styles.stepNumberText}>3</Text></View>
+              <View style={styles.stepHeadingCopy}>
+                <Text style={styles.stepEyebrow}>THEN ASK</Text>
+                <Text style={styles.cardTitle}>What do you need to know?</Text>
+              </View>
+            </View>
+            <TextInput
+              accessibilityLabel="Question about the captured screen"
+              multiline
+              onChangeText={setPrompt}
+              placeholder="Ask a question about this screen…"
+              placeholderTextColor="#8795a3"
+              style={styles.prompt}
+              textAlignVertical="top"
+              value={prompt}
+            />
+            <Button title={busy ? "Reading your screen…" : "Get an answer"} onPress={ask} disabled={!image || busy || !API_URL || Boolean(usage?.device_blocked)} style={styles.askButton} />
+            {!image && !busy ? <Text style={styles.askHint}>Capture a screen first to unlock your answer.</Text> : null}
+            {busy ? <View style={styles.busyRow}><ActivityIndicator color={palette.blue} /><Text style={styles.busyText}>Reading the captured screen…</Text></View> : null}
+          </View>
+
+          {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
+          {answer ? <View onLayout={(event) => {
+            if (!answerScrollPending.current) return;
+            answerScrollPending.current = false;
+            screenScrollRef.current?.scrollTo({ y: Math.max(0, event.nativeEvent.layout.y - 12), animated: true });
+          }} style={[styles.card, styles.answerCard]}><Text style={styles.answerEyebrow}>SCREENHELPER ANSWER</Text><Text selectable style={styles.answer}>{answer}</Text></View> : null}
+
+          {usage && !usage.device_blocked && !usage.unlimited_access ? <View style={[styles.card, compact && styles.cardCompact]}>
+            <Text style={styles.cardTitle}>Need more answers?</Text>
+            <Text style={styles.cardCopy}>Add answer credits securely with M-Pesa.</Text>
             {paymentId ? <Button title="Check pending payment" secondary onPress={() => checkPayment(paymentId)} disabled={paymentBusy} style={styles.pendingButton} /> : null}
-            <Button title={showBundles ? "Hide bundles" : "View answer bundles"} secondary onPress={() => setShowBundles(!showBundles)} style={styles.bundleToggle} />
+            <Button title={showBundles ? "Hide answer packs" : "View answer packs"} secondary onPress={() => setShowBundles(!showBundles)} style={styles.bundleToggle} />
             {showBundles ? bundles.map((bundle) => <View key={bundle.id} style={styles.bundleRow}>
               <View style={styles.bundleCopy}><Text style={styles.bundleName}>{bundle.label} · {bundle.answers.toLocaleString()} answers</Text><Text style={styles.bundlePrice}>KSh {bundle.price}</Text></View>
               <Button title="Choose" onPress={() => { setSelectedBundle(bundle); setPaymentMessage(""); }} style={styles.chooseButton} disabled={paymentBusy} />
             </View>) : null}
           </View> : null}
-          {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
-          {answer ? <View style={[styles.card, compact && styles.cardCompact]}><Text style={styles.cardTitle}>Answer</Text><Text selectable style={styles.answer}>{answer}</Text></View> : null}
-          <Text style={styles.privacy}>No audio is captured. Android may show blank content for apps that block screen capture. Stop sharing here or from Android’s screen-sharing controls.</Text>
+          <Text style={styles.privacy}>Only the captured frame and your question are sent when you tap Get an answer. No audio is recorded. Some apps block screen capture.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
       <Modal animationType="slide" transparent visible={Boolean(selectedBundle)} onRequestClose={() => !paymentBusy && setSelectedBundle(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}><View><Text style={styles.eyebrow}>SECURE CHECKOUT</Text><Text style={styles.modalTitle}>Pay with M-Pesa</Text></View><TouchableOpacity accessibilityRole="button" onPress={() => setSelectedBundle(null)}><Text style={styles.modalClose}>×</Text></TouchableOpacity></View>
-            {selectedBundle ? <Text style={styles.cardCopy}>{selectedBundle.answers.toLocaleString()} answers · KSh {selectedBundle.price}</Text> : null}
-            <Text style={styles.label}>M-Pesa phone number</Text>
-            <TextInput autoComplete="tel" keyboardType="phone-pad" onChangeText={setPhone} placeholder="0712345678" placeholderTextColor="#8998a6" style={styles.input} value={phone} />
-            <Text style={styles.paymentHelp}>We’ll send a payment prompt to this number. Enter your M-Pesa PIN on your phone to confirm.</Text>
-            {paymentMessage ? <Text accessibilityLiveRegion="polite" style={styles.paymentMessage}>{paymentMessage}</Text> : null}
-            {paymentBusy ? <ActivityIndicator color={palette.blue} style={styles.loader} /> : null}
-            <Button title={paymentBusy ? "Please wait…" : paymentId ? "Check payment status" : "Send M-Pesa prompt"} onPress={() => paymentId ? checkPayment(paymentId, 36) : startPayment()} disabled={paymentBusy} style={styles.modalAction} />
-          </View>
+          <KeyboardAvoidingView style={styles.modalKeyboardAvoid} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <View><Text style={styles.eyebrow}>SECURE CHECKOUT</Text><Text style={styles.modalTitle}>Pay with M-Pesa</Text></View>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close checkout" disabled={paymentBusy} onPress={() => setSelectedBundle(null)} style={[styles.modalCloseButton, paymentBusy && styles.buttonDisabled]}><Text style={styles.modalClose}>×</Text></TouchableOpacity>
+                </View>
+                {selectedBundle ? <Text style={styles.cardCopy}>{selectedBundle.answers.toLocaleString()} answers · KSh {selectedBundle.price}</Text> : null}
+                <Text style={styles.label}>M-Pesa phone number</Text>
+                <TextInput autoComplete="tel" keyboardType="phone-pad" onChangeText={setPhone} placeholder="0712345678" placeholderTextColor="#8795a3" style={styles.input} value={phone} />
+                <Text style={styles.paymentHelp}>We’ll send a payment prompt to this number. Enter your M-Pesa PIN on your phone to confirm.</Text>
+                {paymentMessage ? <Text accessibilityLiveRegion="polite" style={styles.paymentMessage}>{paymentMessage}</Text> : null}
+                {paymentBusy ? <ActivityIndicator color={palette.blue} style={styles.loader} /> : null}
+                <Button title={paymentBusy ? "Please wait…" : paymentId ? "Check payment status" : "Send M-Pesa prompt"} onPress={() => paymentId ? checkPayment(paymentId, 36) : startPayment()} disabled={paymentBusy} style={styles.modalAction} />
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -557,20 +701,124 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 }, safe: { flex: 1, backgroundColor: palette.bg }, center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: palette.bg },
-  page: { padding: 20, paddingBottom: 36, maxWidth: 760, width: "100%", alignSelf: "center", gap: 14 }, pageCompact: { padding: 12, paddingBottom: 24, gap: 8 },
+  flex: { flex: 1 },
+  safe: { flex: 1, backgroundColor: palette.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: palette.bg },
+  page: { padding: 20, paddingBottom: 36, maxWidth: 640, width: "100%", alignSelf: "center", gap: 14 },
+  pageCompact: { padding: 14, paddingBottom: 28, gap: 12 },
   authPage: { flexGrow: 1, justifyContent: "center", padding: 24, paddingBottom: 32, maxWidth: 620, width: "100%", alignSelf: "center" },
-  brandMark: { width: 48, height: 48, borderRadius: 15, backgroundColor: palette.blue, alignItems: "center", justifyContent: "center", marginBottom: 18 }, brandMarkText: { color: palette.white, fontSize: 25, fontWeight: "800" },
-  eyebrow: { color: palette.blue, fontSize: 11, fontWeight: "800", letterSpacing: 1.7, marginBottom: 5 }, title: { color: palette.ink, fontSize: 30, fontWeight: "800", letterSpacing: -0.8, lineHeight: 36, marginBottom: 9 }, subtitle: { color: palette.muted, fontSize: 15, lineHeight: 22, marginBottom: 22 },
-  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, paddingVertical: 4 }, topBarTitle: { flexShrink: 1 }, screenTitle: { color: palette.ink, fontSize: 22, fontWeight: "800", letterSpacing: -0.35 }, screenTitleCompact: { fontSize: 17 },
-  card: { backgroundColor: palette.white, borderColor: palette.line, borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 14 }, cardCompact: { padding: 13, marginBottom: 7 }, cardTitle: { color: palette.ink, fontSize: 17, fontWeight: "750", marginBottom: 10 }, cardCopy: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: -4, marginBottom: 14 },
-  label: { color: palette.ink, fontWeight: "650", fontSize: 13, marginBottom: 6, marginTop: 8 }, input: { borderColor: palette.line, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 12, color: palette.ink, fontSize: 15, backgroundColor: palette.white, marginBottom: 4 },
-  button: { minHeight: 47, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 11, backgroundColor: palette.blue, alignItems: "center", justifyContent: "center" }, buttonSecondary: { backgroundColor: palette.white, borderWidth: 1, borderColor: palette.line }, buttonDisabled: { opacity: 0.52 }, buttonText: { color: palette.white, fontSize: 14, fontWeight: "750" }, buttonTextSecondary: { color: palette.ink },
-  modeToggle: { paddingTop: 17, alignItems: "center" }, linkText: { color: palette.blue, fontSize: 13, fontWeight: "700" }, message: { color: palette.blueDark, fontSize: 13, lineHeight: 19, marginVertical: 10 }, googleSetupMessage: { color: palette.muted, fontSize: 12, lineHeight: 17, textAlign: "center", marginTop: 8 }, notice: { padding: 11, backgroundColor: "#fff6dd", borderRadius: 9, color: "#725313", fontSize: 12, lineHeight: 17, marginBottom: 14 }, footnote: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 17 },
-  usage: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#e7f5ee", gap: 8 }, usageDot: { width: 7, height: 7, backgroundColor: palette.green, borderRadius: 9 }, usageText: { color: "#166b4a", fontWeight: "700", fontSize: 12 },
-  sharingStatus: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#e7f5ee", paddingHorizontal: 11, paddingVertical: 8, borderRadius: 9, alignSelf: "flex-start", marginBottom: 12 }, sharingDot: { width: 8, height: 8, borderRadius: 8, backgroundColor: palette.green }, sharingText: { color: "#166b4a", fontWeight: "700", fontSize: 12 },
-  bundleRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 }, bundleCopy: { flex: 1 }, bundleName: { color: palette.ink, fontWeight: "700", fontSize: 13 }, bundlePrice: { color: palette.muted, fontSize: 12, marginTop: 3 }, chooseButton: { minHeight: 38, paddingVertical: 8, paddingHorizontal: 14 }, pendingButton: { marginBottom: 10 }, bundleToggle: { marginTop: -4, marginBottom: 6 },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(19, 35, 49, 0.48)", justifyContent: "flex-end" }, modalCard: { width: "100%", maxWidth: 620, alignSelf: "center", backgroundColor: palette.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 22, paddingBottom: 32 }, modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }, modalTitle: { color: palette.ink, fontSize: 22, fontWeight: "800" }, modalClose: { color: palette.muted, fontSize: 30, lineHeight: 32, paddingHorizontal: 6 }, paymentHelp: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 2, marginBottom: 6 }, paymentMessage: { color: palette.blueDark, fontSize: 13, lineHeight: 19, paddingVertical: 8 }, modalAction: { marginTop: 8 },
-  emptyPreview: { minHeight: 150, borderWidth: 1, borderStyle: "dashed", borderColor: palette.line, backgroundColor: "#f7f9fb", borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 13, padding: 18 }, emptyIcon: { fontSize: 30, color: palette.blue, marginBottom: 5 }, emptyText: { color: palette.muted, fontSize: 13, textAlign: "center" }, preview: { width: "100%", height: 250, backgroundColor: "#edf2f6", borderRadius: 12, marginBottom: 13 }, buttonRow: { flexDirection: "row", gap: 9 }, buttonRowCompact: { flexDirection: "column" }, halfButton: { flex: 1 }, fullButton: { flex: 0, width: "100%" }, prompt: { minHeight: 96, maxHeight: 180, borderColor: palette.line, borderWidth: 1, borderRadius: 11, padding: 13, color: palette.ink, fontSize: 14, lineHeight: 20, marginBottom: 13 }, loader: { marginTop: 12 },
-  errorBox: { padding: 14, borderRadius: 12, backgroundColor: "#fff0ef", borderColor: "#f3c7c2", borderWidth: 1 }, errorText: { color: "#a52e23", fontSize: 13, lineHeight: 19 }, answer: { color: palette.ink, fontSize: 15, lineHeight: 24 }, privacy: { color: palette.muted, fontSize: 11, lineHeight: 17, textAlign: "center", marginTop: 2 },
+
+  brandMark: { width: 48, height: 48, borderRadius: 15, backgroundColor: palette.blue, alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  brandMarkText: { color: palette.white, fontSize: 25, fontWeight: "800" },
+  brandMarkSmall: { width: 40, height: 40, borderRadius: 14, backgroundColor: palette.blue, alignItems: "center", justifyContent: "center" },
+  brandMarkSmallText: { color: palette.white, fontSize: 21, fontWeight: "800" },
+  brandLockup: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandName: { color: palette.ink, fontSize: 12, fontWeight: "800", letterSpacing: 1.1 },
+  brandCaption: { color: palette.muted, fontSize: 11, marginTop: 2 },
+  eyebrow: { color: palette.blue, fontSize: 11, fontWeight: "800", letterSpacing: 1.7, marginBottom: 5 },
+  title: { color: palette.ink, fontSize: 30, fontWeight: "800", letterSpacing: -0.8, lineHeight: 36, marginBottom: 9 },
+  subtitle: { color: palette.muted, fontSize: 15, lineHeight: 22, marginBottom: 22 },
+
+  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 },
+  signOutButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 12, backgroundColor: palette.white, borderWidth: 1, borderColor: palette.line },
+  signOutText: { color: palette.muted, fontWeight: "700", fontSize: 12 },
+  hero: { paddingTop: 7, paddingBottom: 2 },
+  heroTitle: { color: palette.ink, fontSize: 29, lineHeight: 34, fontWeight: "800", letterSpacing: -0.7 },
+  heroSubtitle: { color: palette.muted, fontSize: 14, lineHeight: 20, marginTop: 5 },
+  usageRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+
+  card: { backgroundColor: palette.white, borderColor: palette.line, borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 0, elevation: 1 },
+  cardCompact: { padding: 14, marginBottom: 0 },
+  captureCard: { padding: 16 },
+  askCard: { padding: 18 },
+  answerCard: { backgroundColor: "#edf6ff", borderColor: "#d7eafa" },
+  cardTitle: { color: palette.ink, fontSize: 18, lineHeight: 23, fontWeight: "800" },
+  cardCopy: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: 8, marginBottom: 14 },
+  stepHeading: { flexDirection: "row", alignItems: "center", gap: 11 },
+  stepHeadingCopy: { flex: 1 },
+  stepNumber: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#e9f3fb", alignItems: "center", justifyContent: "center" },
+  stepNumberComplete: { backgroundColor: "#e7f5ee" },
+  stepNumberText: { color: palette.blueDark, fontSize: 14, fontWeight: "800" },
+  stepEyebrow: { color: palette.blue, fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginBottom: 2 },
+  captureStepHeading: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 11 },
+  captureStepTitle: { color: palette.ink, fontWeight: "700", fontSize: 14 },
+  livePill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 30, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: "#e7f5ee" },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.green },
+  liveText: { color: "#166b4a", fontSize: 9, fontWeight: "800", letterSpacing: 0.7 },
+
+  framePlaceholder: { width: "100%", paddingHorizontal: 18, backgroundColor: "#f5f9fc", borderWidth: 1, borderColor: palette.line, borderStyle: "dashed", borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 13 },
+  frameIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: "#e4f1fb", alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  frameIconText: { color: palette.blue, fontSize: 25, fontWeight: "700" },
+  frameTitle: { color: palette.ink, fontSize: 14, fontWeight: "700", textAlign: "center" },
+  frameSubtitle: { color: palette.muted, fontSize: 12, lineHeight: 17, textAlign: "center", marginTop: 5, maxWidth: 300 },
+  preview: { width: "100%", height: 250, backgroundColor: "#edf2f6", borderRadius: 15, marginBottom: 10 },
+  frameReadyRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
+  readyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: palette.green },
+  frameReadyText: { color: "#166b4a", fontSize: 12, fontWeight: "700" },
+  inlineCaptureError: { color: "#a52e23", fontSize: 12, lineHeight: 17, marginTop: 10 },
+
+  button: { minHeight: 52, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 14, backgroundColor: palette.blue, alignItems: "center", justifyContent: "center" },
+  buttonSecondary: { backgroundColor: palette.white, borderWidth: 1, borderColor: palette.line },
+  buttonDisabled: { opacity: 0.46 },
+  buttonText: { color: palette.white, fontSize: 14, fontWeight: "800", textAlign: "center" },
+  buttonTextSecondary: { color: palette.ink },
+  startButton: { width: "100%" },
+  captureButton: { flex: 1 },
+  stopButton: { minWidth: 124 },
+  buttonRow: { flexDirection: "row", alignItems: "stretch", gap: 9 },
+  buttonRowCompact: { flexDirection: "column" },
+  halfButton: { flex: 1 },
+  fullButton: { flex: 0, width: "100%" },
+
+  prompt: { minHeight: 104, maxHeight: 180, borderColor: palette.line, borderWidth: 1, borderRadius: 14, padding: 14, color: palette.ink, fontSize: 15, lineHeight: 21, marginTop: 15, marginBottom: 12, backgroundColor: "#fbfdff" },
+  askButton: { width: "100%" },
+  askHint: { color: palette.muted, fontSize: 12, textAlign: "center", marginTop: 9 },
+  busyRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, marginTop: 12 },
+  busyText: { color: palette.muted, fontSize: 12 },
+  loader: { marginTop: 12 },
+  answerEyebrow: { color: palette.blueDark, fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginBottom: 10 },
+  answer: { color: palette.ink, fontSize: 15, lineHeight: 24 },
+  errorBox: { padding: 14, borderRadius: 14, backgroundColor: "#fff0ef", borderColor: "#f3c7c2", borderWidth: 1 },
+  errorText: { color: "#a52e23", fontSize: 13, lineHeight: 19 },
+  deviceBlockedBox: { padding: 16, borderRadius: 16, backgroundColor: "#fff7e8", borderColor: "#f0d6a5", borderWidth: 1 },
+  deviceBlockedTitle: { color: "#583b0b", fontSize: 15, fontWeight: "800" },
+  deviceBlockedText: { color: "#69532d", fontSize: 13, lineHeight: 19, marginTop: 7 },
+  deviceBlockedAction: { alignSelf: "flex-start", marginTop: 10, paddingVertical: 5 },
+  deviceBlockedActionText: { color: palette.blueDark, fontSize: 13, fontWeight: "800" },
+
+  usage: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#e7f5ee", gap: 8 },
+  usageLoading: { backgroundColor: "#eaf0f5" },
+  usageDot: { width: 7, height: 7, backgroundColor: palette.green, borderRadius: 9 },
+  usageDotLoading: { backgroundColor: "#8293a2" },
+  usageText: { color: "#166b4a", fontWeight: "700", fontSize: 12 },
+  usageTextLoading: { color: palette.muted },
+  bundleRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 },
+  bundleCopy: { flex: 1 },
+  bundleName: { color: palette.ink, fontWeight: "700", fontSize: 13 },
+  bundlePrice: { color: palette.muted, fontSize: 12, marginTop: 3 },
+  chooseButton: { minHeight: 40, paddingVertical: 8, paddingHorizontal: 14 },
+  pendingButton: { marginBottom: 10 },
+  bundleToggle: { marginTop: 2 },
+
+  label: { color: palette.ink, fontWeight: "700", fontSize: 13, marginBottom: 6, marginTop: 8 },
+  input: { borderColor: palette.line, borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, color: palette.ink, fontSize: 15, backgroundColor: palette.white, marginBottom: 4 },
+  modeToggle: { paddingTop: 17, alignItems: "center" },
+  linkText: { color: palette.blue, fontSize: 13, fontWeight: "700" },
+  message: { color: palette.blueDark, fontSize: 13, lineHeight: 19, marginVertical: 10 },
+  googleSetupMessage: { color: palette.muted, fontSize: 12, lineHeight: 17, textAlign: "center", marginTop: 8 },
+  notice: { padding: 11, backgroundColor: "#fff6dd", borderRadius: 9, color: "#725313", fontSize: 12, lineHeight: 17, marginBottom: 14 },
+  footnote: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 17 },
+
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(19, 35, 49, 0.48)", justifyContent: "flex-end" },
+  modalKeyboardAvoid: { flex: 1, justifyContent: "flex-end" },
+  modalScroll: { flexGrow: 1, justifyContent: "flex-end" },
+  modalCard: { width: "100%", maxWidth: 620, alignSelf: "center", backgroundColor: palette.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 22, paddingBottom: 32 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
+  modalTitle: { color: palette.ink, fontSize: 22, fontWeight: "800" },
+  modalClose: { color: palette.muted, fontSize: 30, lineHeight: 32, paddingHorizontal: 6 },
+  modalCloseButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#f3f7fb" },
+  paymentHelp: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 2, marginBottom: 6 },
+  paymentMessage: { color: palette.blueDark, fontSize: 13, lineHeight: 19, paddingVertical: 8 },
+  modalAction: { marginTop: 8 },
+  privacy: { color: palette.muted, fontSize: 11, lineHeight: 17, textAlign: "center", marginTop: 3, paddingHorizontal: 12 },
 });
