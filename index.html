@@ -47,7 +47,7 @@
     .status {
       display: inline-flex; align-items: center; gap: 8px;
       padding: 7px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 650;
-      background: var(--bad-bg); color: var(--bad);
+      background: #eef1f4; color: var(--muted);
     }
     .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
     .status.active { background: var(--ok-bg); color: var(--ok); }
@@ -133,7 +133,7 @@
     .output-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
     .output-head h2 { margin: 0; }
     #output {
-      min-height: clamp(220px, 35vh, 420px); width: 100%; padding: 18px; border-radius: 8px;
+      min-height: clamp(140px, 24vh, 300px); width: 100%; padding: 18px; border-radius: 8px;
       background: var(--bg); border-left: 4px solid var(--accent);
       white-space: normal; overflow-wrap: anywhere; word-break: normal; font-weight: 500; line-height: 1.7;
     }
@@ -163,6 +163,11 @@
     #history li { font-size: 0.88rem; padding: 12px 14px; border-radius: 8px; background: var(--bg); }
     #history time { display: block; color: var(--muted); font-size: 0.72rem; margin-bottom: 2px; }
     .workspace { max-width: 1120px; margin: 0 auto; }
+    .workspace-intro { margin: 4px 0 18px; }
+    .workspace-intro .eyebrow { margin-bottom: 5px; }
+    .workspace-intro h2 { margin: 0; font-size: clamp(1.45rem, 2.5vw, 1.9rem); letter-spacing: -0.035em; line-height: 1.2; }
+    .workspace-intro p:last-child { margin: 6px 0 0; color: var(--muted); }
+    .step-title { margin: 0 0 12px; font-size: 1rem; letter-spacing: -0.01em; }
     .workspace .card { margin-bottom: 14px; }
     .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 12px; align-items: start; }
     .workspace-side .card { height: 100%; }
@@ -288,7 +293,7 @@
   <main>
     <header class="site-header">
       <h1>ScreenHelper <span>AI</span></h1>
-      <div id="status" class="status" role="status">No tab connected</div>
+      <div id="status" class="status hidden" role="status">No tab connected</div>
     </header>
     <div id="workspaceLoading" class="card hidden" role="status">Loading your workspace…</div>
 
@@ -371,26 +376,34 @@
     </section>
 
     <div id="appArea" class="workspace hidden">
+      <div class="workspace-intro">
+        <p class="eyebrow">Your workspace</p>
+        <h2>Get help from a browser tab</h2>
+        <p>Share the page you’re viewing, then ask a question about it.</p>
+      </div>
       <div class="workspace-grid">
         <section class="card">
+          <h3 class="step-title">1. Share a tab</h3>
           <div id="preview" class="preview">
-            <div class="placeholder">Share a browser tab to see a live preview here.</div>
+            <div class="placeholder">Your shared tab preview will appear here.</div>
             <video id="videoFeed" autoplay playsinline muted></video>
           </div>
           <div class="row">
-            <button id="connectBtn" type="button">🔗 Connect tab</button>
-            <button id="disconnectBtn" type="button" class="hidden">⏹ Stop sharing</button>
+            <button id="connectBtn" type="button" class="primary">Connect a tab</button>
+            <button id="disconnectBtn" type="button" class="hidden">Stop sharing</button>
           </div>
           <p id="support" class="hint hidden"></p>
+          <p class="hint">Choose the browser tab in the sharing dialog. You can stop sharing at any time.</p>
         </section>
 
         <div class="workspace-side">
           <section class="card">
-            <label for="questionInput">Guidance <span style="color:var(--muted);font-weight:400">(optional)</span></label>
-            <textarea id="questionInput" placeholder="e.g. “Explain question 3” — leave blank to answer whatever is on screen."></textarea>
+            <h3 class="step-title">2. Ask about it</h3>
+            <label for="questionInput">What would you like help with? <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <textarea id="questionInput" placeholder="For example: Explain question 3, or summarize this page."></textarea>
             <button id="askBtn" type="button" class="primary" disabled>
               <span class="spinner" aria-hidden="true"></span>
-              <span id="askLabel">💡 Answer question</span>
+              <span id="askLabel">Answer question</span>
             </button>
             <p class="hint">Shortcut: <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (<kbd>⌘</kbd> + <kbd>Enter</kbd> on Mac)</p>
             <details class="privacy-note">
@@ -401,12 +414,12 @@
         </div>
       </div>
 
-    <section class="card">
+    <section id="answerCard" class="card">
       <div class="output-head">
         <h2>Answer</h2>
         <button id="copyBtn" type="button" class="small hidden">Copy</button>
       </div>
-      <div id="output" class="empty" aria-live="polite">Connect a tab to get started.</div>
+      <div id="output" class="empty" aria-live="polite">Your answer will appear here. Connect a tab to get started.</div>
     </section>
 
     <section id="historyCard" class="card hidden">
@@ -685,7 +698,7 @@
       statusEl.textContent = live ? "Tab connected" : "No tab connected";
       statusEl.classList.toggle("active", live);
       previewEl.classList.toggle("live", live);
-      connectBtn.textContent = live ? "🔄 Switch tab" : "🔗 Connect tab";
+      connectBtn.textContent = live ? "Switch tab" : "Connect a tab";
       disconnectBtn.classList.toggle("hidden", !live);
       askBtn.disabled = !live || busy || !authenticated || !accessAvailable();
       askBtn.classList.toggle("loading", busy);
@@ -742,6 +755,7 @@
       const showingPlans = window.location.pathname === "/plans";
       appArea.classList.toggle("hidden", showingPlans);
       plansArea.classList.toggle("hidden", !showingPlans);
+      statusEl.classList.toggle("hidden", showingPlans);
       $("accountEmail").textContent = data.email || "Signed in";
       updateUsage(data.usage);
     }
@@ -999,6 +1013,10 @@
         if (lastAnswer) addHistory(lastAnswer);
         lastAnswer = { text: data.answer, at: new Date() };
         setOutput(data.answer, "");
+        document.getElementById("answerCard").scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          block: "start",
+        });
       } catch (err) {
         setOutput(err.message, "error");
       } finally {
@@ -1061,6 +1079,7 @@
       accountCard.classList.add("hidden");
       appArea.classList.add("hidden");
       plansArea.classList.add("hidden");
+      statusEl.classList.add("hidden");
       authLayout.classList.remove("hidden");
       authCard.classList.remove("hidden");
       $("passwordInput").value = "";
