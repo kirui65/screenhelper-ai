@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as Crypto from "expo-crypto";
 import * as Application from "expo-application";
 import * as Linking from "expo-linking";
 import { createClient } from "@supabase/supabase-js";
@@ -35,7 +36,6 @@ const API_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
-let configuredGoogleClientId = "";
 function isSecureEndpoint(value) {
   try {
     const protocol = new URL(value).protocol;
@@ -189,10 +189,10 @@ function AuthScreen({ passwordRecovery = false, recoveryMessage = "", onPassword
     setMessage("");
     try {
       if (!GOOGLE_WEB_CLIENT_ID) throw new Error("Google sign-in needs the Google Web client ID in the EAS environment.");
-      if (configuredGoogleClientId !== GOOGLE_WEB_CLIENT_ID) {
-        GoogleOneTapSignIn.configure({ webClientId: GOOGLE_WEB_CLIENT_ID });
-        configuredGoogleClientId = GOOGLE_WEB_CLIENT_ID;
-      }
+      const nonceBytes = await Crypto.getRandomBytesAsync(32);
+      const nonce = Array.from(nonceBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, nonce);
+      GoogleOneTapSignIn.configure({ webClientId: GOOGLE_WEB_CLIENT_ID, nonce: hashedNonce });
       await GoogleOneTapSignIn.checkPlayServices();
       let result = await GoogleOneTapSignIn.signIn();
       if (isNoSavedCredentialFoundResponse(result)) result = await GoogleOneTapSignIn.createAccount();
@@ -207,6 +207,7 @@ function AuthScreen({ passwordRecovery = false, recoveryMessage = "", onPassword
       const { error } = await supabase.auth.signInWithIdToken({
         provider: "google",
         token: result.data.idToken,
+        nonce,
       });
       if (error) throw error;
     } catch (error) {
