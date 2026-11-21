@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "ScreenHelper AI",
+    "slug": "screenhelper-ai",
+    "scheme": "screenhelperai",
+    "icon": "./assets/screenhelper-icon.png",
+    "version": "1.0.0",
+    "platforms": [
+      "android"
+    ],
+    "orientation": "default",
+    "android": {
+      "package": "com.screenhelperai.mobile",
+      "allowBackup": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/screenhelper-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "react-native-nitro-google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.460236624946-0bat33llb89i4bt2bnt7fcrvnm6ov3t9"
+        }
+      ],
+      "./with-screen-stream"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "19fe8d51-4a7d-43b4-b6c7-2b13d5eb8b56"
+      }
+    },
+    "owner": "haruna-dev"
+  }
+}
