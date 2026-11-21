@@ -131,6 +131,16 @@ function clearGoogleVerifierCookie(res) {
 
 async function getSession(req, res) {
   if (!isConfigured()) return null;
+  // Native clients send Supabase access tokens in the Authorization header;
+  // browser clients continue to use the HttpOnly session cookies below.
+  const authorization = req.headers.authorization || "";
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) {
+    try {
+      const user = await supabaseAuth("/user", { accessToken: bearer });
+      return { user, accessToken: bearer };
+    } catch { return null; }
+  }
   const sessionCookies = cookies(req);
   if (sessionCookies.sh_access) {
     try {
